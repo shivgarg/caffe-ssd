@@ -2,8 +2,6 @@ cur_dir=$(cd $( dirname ${BASH_SOURCE[0]} ) && pwd )
 
 root_dir=$2
 
-cd $root_dir
-
 redo=1
 data_root_dir=$1
 dataset_name=OpenImages/OpenImages_is

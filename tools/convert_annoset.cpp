@@ -19,6 +19,9 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <pthread.h>
+#include <unistd.h>
+#include <sys/sysinfo.h>
 
 #include "boost/scoped_ptr.hpp"
 #include "boost/variant.hpp"
@@ -55,12 +58,119 @@ DEFINE_int32(max_dim, 0,
     "Maximum dimension images are resized to (keep same aspect ratio)");
 DEFINE_int32(resize_width, 0, "Width images are resized to");
 DEFINE_int32(resize_height, 0, "Height images are resized to");
+DEFINE_int32(thread_count, 8, "Thread counts");
 DEFINE_bool(check_size, false,
     "When this option is on, check that all the datum have the same size");
 DEFINE_bool(encoded, false,
     "When this option is on, the encoded image will be save in datum");
 DEFINE_string(encode_type, "",
     "Optional: What type should we encode the image as ('png','jpg',...).");
+
+typedef struct _LMDBData {
+  bool is_color;
+  bool encoded;
+  string encode_type;
+  string anno_type;
+  AnnotatedDatum_AnnotationType type;
+  string label_type;
+  string label_map_file;
+  bool check_label;
+  std::map<std::string, int> name_to_label;
+
+  int min_dim;
+  int max_dim;
+  int resize_height;
+  int resize_width;
+
+  std::string root_folder;
+  std::vector<std::pair<std::string, boost::variant<int, std::string> > > lines;
+
+  db::DB* db;
+  int thread_num;
+  int thread_idx;
+} LMDBData;
+int g_count = 0;
+pthread_mutex_t mutex_lock;
+
+void *write_to_lmdb(void* _data) {
+  LMDBData* data = (LMDBData*)_data;
+  AnnotatedDatum anno_datum;
+  Datum* datum = anno_datum.mutable_datum();
+  db::Transaction* txn = data->db->NewTransaction();
+  int step = data->lines.size() / data->thread_num ;
+  int from = step * data->thread_idx;
+  int to;
+  int count = 0;
+  if (data->thread_num == data->thread_idx + 1) {
+    to = data->lines.size();
+  } else {
+    to = from + step;
+  }
+  for (int line_id = from; line_id < to; ++line_id) {
+    bool status = true;
+    std::string enc = data->encode_type;
+    if (data->encoded && !enc.size()) {
+      // Guess the encoding type from the file name
+      string fn = data->lines[line_id].first;
+      size_t p = fn.rfind('.');
+      if ( p == fn.npos )
+        LOG(WARNING) << "Failed to guess the encoding of '" << fn << "'";
+      enc = fn.substr(p);
+      std::transform(enc.begin(), enc.end(), enc.begin(), ::tolower);
+    }
+    std::string filename = data->root_folder + data->lines[line_id].first;
+    if (data->anno_type == "classification") {
+      int label = boost::get<int>(data->lines[line_id].second);
+      status = ReadImageToDatum(filename, label, data->resize_height, data->resize_width,
+          data->min_dim, data->max_dim, data->is_color, enc, datum);
+    } else if (data->anno_type == "detection") {
+      std::string labelname = data->root_folder + boost::get<std::string>(data->lines[line_id].second);
+      status = ReadRichImageToAnnotatedDatum(filename, labelname, data->resize_height,
+          data->resize_width, data->min_dim, data->max_dim, data->is_color, enc, data->type, data->label_type,
+          data->name_to_label, &anno_datum);
+      anno_datum.set_type(AnnotatedDatum_AnnotationType_BBOX);
+    }
+    if (status == false) {
+      LOG(WARNING) << "Failed to read " << data->lines[line_id].first;
+      continue;
+    }
+//    if (data->check_size) {
+//      if (!data_size_initialized) {
+//        data_size = datum->channels() * datum->height() * datum->width();
+//        data_size_initialized = true;
+//      } else {
+//        const std::string& data = datum->data();
+//        CHECK_EQ(data.size(), data_size) << "Incorrect data field size "
+//            << data.size();
+//      }
+//    }
+    // sequential
+    string key_str = caffe::format_int(line_id, 8) + "_" + data->lines[line_id].first;
+
+    // Put in db
+    string out;
+    CHECK(anno_datum.SerializeToString(&out));
+    txn->Put(key_str, out);
+
+    __atomic_fetch_add(&g_count, 1, __ATOMIC_SEQ_CST);
+    if (++count % 1000 == 0) {
+      // Commit db
+      pthread_mutex_lock(&mutex_lock);
+      txn->Commit();
+      pthread_mutex_unlock(&mutex_lock);
+      delete txn;
+      txn = data->db->NewTransaction();
+      LOG(INFO) << "Processed " << g_count << " files.";
+    }
+  }
+
+  if (count % 1000 != 0) {
+    pthread_mutex_lock(&mutex_lock);
+    txn->Commit();
+    pthread_mutex_unlock(&mutex_lock);
+    LOG(INFO) << "Processed " << g_count << " files.";
+  }
+}
 
 int main(int argc, char** argv) {
 #ifdef USE_OPENCV
@@ -93,6 +203,7 @@ int main(int argc, char** argv) {
   const string label_map_file = FLAGS_label_map_file;
   const bool check_label = FLAGS_check_label;
   std::map<std::string, int> name_to_label;
+  const int thread_num = FLAGS_thread_count;
 
   std::ifstream infile(argv[2]);
   std::vector<std::pair<std::string, boost::variant<int, std::string> > > lines;
@@ -114,6 +225,7 @@ int main(int argc, char** argv) {
       lines.push_back(std::make_pair(filename, labelname));
     }
   }
+
   if (FLAGS_shuffle) {
     // randomly shuffle data
     LOG(INFO) << "Shuffling data";
@@ -132,76 +244,45 @@ int main(int argc, char** argv) {
   // Create new DB
   scoped_ptr<db::DB> db(db::GetDB(FLAGS_backend));
   db->Open(argv[3], db::NEW);
-  scoped_ptr<db::Transaction> txn(db->NewTransaction());
 
   // Storing to db
   std::string root_folder(argv[1]);
-  AnnotatedDatum anno_datum;
-  Datum* datum = anno_datum.mutable_datum();
-  int count = 0;
-  int data_size = 0;
-  bool data_size_initialized = false;
 
-  for (int line_id = 0; line_id < lines.size(); ++line_id) {
-    bool status = true;
-    std::string enc = encode_type;
-    if (encoded && !enc.size()) {
-      // Guess the encoding type from the file name
-      string fn = lines[line_id].first;
-      size_t p = fn.rfind('.');
-      if ( p == fn.npos )
-        LOG(WARNING) << "Failed to guess the encoding of '" << fn << "'";
-      enc = fn.substr(p);
-      std::transform(enc.begin(), enc.end(), enc.begin(), ::tolower);
-    }
-    filename = root_folder + lines[line_id].first;
-    if (anno_type == "classification") {
-      label = boost::get<int>(lines[line_id].second);
-      status = ReadImageToDatum(filename, label, resize_height, resize_width,
-          min_dim, max_dim, is_color, enc, datum);
-    } else if (anno_type == "detection") {
-      labelname = root_folder + boost::get<std::string>(lines[line_id].second);
-      status = ReadRichImageToAnnotatedDatum(filename, labelname, resize_height,
-          resize_width, min_dim, max_dim, is_color, enc, type, label_type,
-          name_to_label, &anno_datum);
-      anno_datum.set_type(AnnotatedDatum_AnnotationType_BBOX);
-    }
-    if (status == false) {
-      LOG(WARNING) << "Failed to read " << lines[line_id].first;
-      continue;
-    }
-    if (check_size) {
-      if (!data_size_initialized) {
-        data_size = datum->channels() * datum->height() * datum->width();
-        data_size_initialized = true;
-      } else {
-        const std::string& data = datum->data();
-        CHECK_EQ(data.size(), data_size) << "Incorrect data field size "
-            << data.size();
-      }
-    }
-    // sequential
-    string key_str = caffe::format_int(line_id, 8) + "_" + lines[line_id].first;
-
-    // Put in db
-    string out;
-    CHECK(anno_datum.SerializeToString(&out));
-    txn->Put(key_str, out);
-
-    if (++count % 1000 == 0) {
-      // Commit db
-      txn->Commit();
-      txn.reset(db->NewTransaction());
-      LOG(INFO) << "Processed " << count << " files.";
-    }
+  pthread_t threads[thread_num];
+  LMDBData lmdbData[thread_num];
+  int i = 0;
+  for (i = 0; i < thread_num; ++i) {
+    lmdbData[i].is_color = is_color;
+    lmdbData[i].encoded = encoded;
+    lmdbData[i].encode_type = encode_type;
+    lmdbData[i].anno_type = anno_type;
+    lmdbData[i].type = type;
+    lmdbData[i].label_type = label_type;
+    lmdbData[i].label_map_file = label_map_file;
+    lmdbData[i].check_label = check_label;
+    lmdbData[i].name_to_label = name_to_label;
+    lmdbData[i].min_dim = min_dim;
+    lmdbData[i].max_dim = max_dim;
+    lmdbData[i].resize_height = resize_height;
+    lmdbData[i].resize_width = resize_width;
+    lmdbData[i].root_folder = root_folder;
+    lmdbData[i].lines = lines;
+    lmdbData[i].db = db.get();
+    lmdbData[i].thread_num = thread_num;
   }
-  // write the last batch
-  if (count % 1000 != 0) {
-    txn->Commit();
-    LOG(INFO) << "Processed " << count << " files.";
+
+  pthread_mutex_init(&mutex_lock, NULL);
+  for (i = 0; i < thread_num; ++i) {
+    lmdbData[i].thread_idx = i;
+    pthread_create(&threads[i], NULL, write_to_lmdb, &lmdbData[i]);
   }
+  for (i = 0; i < thread_num; ++i)
+    pthread_join(threads[i], NULL);
+  pthread_mutex_destroy(&mutex_lock);
+
 #else
   LOG(FATAL) << "This tool requires OpenCV; compile with USE_OPENCV.";
 #endif  // USE_OPENCV
   return 0;
 }
+

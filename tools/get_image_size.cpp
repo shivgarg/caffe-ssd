@@ -84,10 +84,12 @@ int main(int argc, char** argv) {
   }
   int height, width;
   int count = 0;
+  #pragma omp parallel for ordered
   for (int line_id = 0; line_id < lines.size(); ++line_id) {
     boost::filesystem::path img_file = root_folder / lines[line_id].first;
     GetImageSize(img_file.string(), &height, &width);
     std::string img_name = img_file.stem().string();
+    #pragma omp ordered
     if (map_name_id.size() == 0) {
       outfile << img_name << " " << height << " " << width << std::endl;
     } else {

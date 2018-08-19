@@ -1,0 +1,50 @@
+item { 
+ name : "background"
+ label: 0
+ display_name: "background"
+}
+item { 
+ name : "plays"
+ label: 1
+ display_name: "plays"
+}
+item { 
+ name : "interacts_with"
+ label: 2
+ display_name: "interacts_with"
+}
+item { 
+ name : "under"
+ label: 3
+ display_name: "under"
+}
+item { 
+ name : "wears"
+ label: 4
+ display_name: "wears"
+}
+item { 
+ name : "on"
+ label: 5
+ display_name: "on"
+}
+item { 
+ name : "inside_of"
+ label: 6
+ display_name: "inside_of"
+}
+item { 
+ name : "holds"
+ label: 7
+ display_name: "holds"
+}
+item { 
+ name : "hits"
+ label: 8
+ display_name: "hits"
+}
+item { 
+ name : "at"
+ label: 9
+ display_name: "at"
+}

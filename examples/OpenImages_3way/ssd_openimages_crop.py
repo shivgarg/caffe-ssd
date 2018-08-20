@@ -79,9 +79,9 @@ resume_training = False
 remove_old_models = True
 
 # The database file for training data. Created by data/VOC0712/create_data.sh
-train_data = "examples/OpenImages/OpenImages_is/OpenImages_is_trainval_lmdb"
+train_data = "examples/OpenImages/OpenImages_crop/OpenImages_crop_trainval_lmdb"
 # The database file for testing data. Created by data/VOC0712/create_data.sh
-test_data = "examples/OpenImages/OpenImages_is/OpenImages_is_test_lmdb"
+test_data = "examples/OpenImages/OpenImages_crop/OpenImages_crop_test_lmdb"
 # Specify the batch sampler.
 resize_width = 300
 resize_height = 300
@@ -234,14 +234,14 @@ else:
 # Modify the job name if you want.
 job_name = "SSD_{}".format(resize)
 # The name of the model. Modify it if you want.
-model_name = "VGG_OpenImages_is_{}".format(job_name)
+model_name = "VGG_OpenImages_crop_{}".format(job_name)
 
 # Directory which stores the model .prototxt file.
-save_dir = "models/VGGNet/OpenImages/OpenImages_is/{}".format(job_name)
+save_dir = "models/VGGNet/OpenImages/OpenImages_crop/{}".format(job_name)
 # Directory which stores the snapshot of models.
-snapshot_dir = "models/VGGNet/OpenImages/OpenImages_is/{}".format(job_name)
+snapshot_dir = "models/VGGNet/OpenImages/OpenImages_crop/{}".format(job_name)
 # Directory which stores the job script and log file.
-job_dir = "jobs/VGGNet/OpenImages/OpenImages_is/{}".format(job_name)
+job_dir = "jobs/VGGNet/OpenImages/OpenImages_crop/{}".format(job_name)
 # Directory which stores the detection results.
 output_result_dir = "{}/results".format(job_dir)
 
@@ -256,14 +256,14 @@ snapshot_prefix = "{}/{}".format(snapshot_dir, model_name)
 job_file = "{}/{}.sh".format(job_dir, model_name)
 
 # Stores the test image names and sizes. Created by data/VOC0712/create_list.sh
-name_size_file = "data/OpenImages/OpenImages_is/test_name_size.txt"
+name_size_file = "data/OpenImages/OpenImages_crop/test_name_size.txt"
 # The pretrained model. We use the Fully convolutional reduced (atrous) VGGNet.
 pretrain_model = "models/VGGNet/VGG_ILSVRC_16_layers_fc_reduced.caffemodel"
 # Stores LabelMapItem.
-label_map_file = "data/OpenImages/OpenImages_is/labelmap_is.prototxt"
+label_map_file = "data/OpenImages/OpenImages_crop/labelmap_crop.prototxt"
 
 # MultiBoxLoss parameters.
-num_classes = 43
+num_classes = 58
 share_location = True
 background_label_id=0
 train_on_diff_gt = True
@@ -356,7 +356,7 @@ elif normalization_mode == P.Loss.FULL:
   base_lr *= 2000.
 
 # Evaluate on whole test set.
-num_test_image = 7012
+num_test_image = 18062
 test_batch_size = 8
 # Ideally test_batch_size should be divisible by num_test_image,
 # otherwise mAP will be slightly off the true value.

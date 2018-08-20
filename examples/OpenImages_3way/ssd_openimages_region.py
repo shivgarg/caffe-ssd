@@ -79,9 +79,9 @@ resume_training = True
 remove_old_models = False
 
 # The database file for training data. Created by data/VOC0712/create_data.sh
-train_data = "examples/OpenImages/OpenImages_comb/OpenImages_comb_trainval_lmdb"
+train_data = "examples/OpenImages/OpenImages_region/OpenImages_region_trainval_lmdb"
 # The database file for testing data. Created by data/VOC0712/create_data.sh
-test_data = "examples/OpenImages/OpenImages_comb/OpenImages_comb_test_lmdb"
+test_data = "examples/OpenImages/OpenImages_region/OpenImages_region_test_lmdb"
 # Specify the batch sampler.
 resize_width = 300
 resize_height = 300
@@ -234,14 +234,14 @@ else:
 # Modify the job name if you want.
 job_name = "SSD_{}".format(resize)
 # The name of the model. Modify it if you want.
-model_name = "VGG_OpenImages_comb_{}".format(job_name)
+model_name = "VGG_OpenImages_region_{}".format(job_name)
 
 # Directory which stores the model .prototxt file.
-save_dir = "models/VGGNet/OpenImages/OpenImages_comb/{}".format(job_name)
+save_dir = "models/VGGNet/OpenImages/OpenImages_region/{}".format(job_name)
 # Directory which stores the snapshot of models.
-snapshot_dir = "models/VGGNet/OpenImages/OpenImages_comb/{}".format(job_name)
+snapshot_dir = "models/VGGNet/OpenImages/OpenImages_region/{}".format(job_name)
 # Directory which stores the job script and log file.
-job_dir = "jobs/VGGNet/OpenImages/OpenImages_comb/{}".format(job_name)
+job_dir = "jobs/VGGNet/OpenImages/OpenImages_region/{}".format(job_name)
 # Directory which stores the detection results.
 output_result_dir = "{}/results".format(job_dir)
 
@@ -256,11 +256,11 @@ snapshot_prefix = "{}/{}".format(snapshot_dir, model_name)
 job_file = "{}/{}.sh".format(job_dir, model_name)
 
 # Stores the test image names and sizes. Created by data/VOC0712/create_list.sh
-name_size_file = "data/OpenImages/OpenImages_comb/test_name_size.txt"
+name_size_file = "data/OpenImages/OpenImages_region/test_name_size.txt"
 # The pretrained model. We use the Fully convolutional reduced (atrous) VGGNet.
 pretrain_model = "models/VGGNet/VGG_ILSVRC_16_layers_fc_reduced.caffemodel"
 # Stores LabelMapItem.
-label_map_file = "data/OpenImages/OpenImages_comb/labelmap_comb.prototxt"
+label_map_file = "data/OpenImages/OpenImages_region/labelmap_region.prototxt"
 
 # MultiBoxLoss parameters.
 num_classes = 10
@@ -382,7 +382,7 @@ solver_param = {
     'snapshot_after_train': True,
     # Test parameters
     'test_iter': [test_iter],
-    'test_interval': 10,
+    'test_interval': 5000,
     'eval_type': "detection",
     'ap_version': "11point",
     'test_initialization': False,

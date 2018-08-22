@@ -191,21 +191,21 @@ bool ReadRichImageToAnnotatedDatum(const string& filename,
     const int min_dim, const int max_dim, const bool is_color,
     const std::string& encoding, const AnnotatedDatum_AnnotationType type,
     const string& labeltype, const std::map<string, int>& name_to_label,
-    AnnotatedDatum* anno_datum);
+    const bool bbox_multi, AnnotatedDatum* anno_datum);
 
 inline bool ReadRichImageToAnnotatedDatum(const string& filename,
     const string& labelname, const int height, const int width,
     const bool is_color, const std::string & encoding,
     const AnnotatedDatum_AnnotationType type, const string& labeltype,
-    const std::map<string, int>& name_to_label, AnnotatedDatum* anno_datum) {
+    const std::map<string, int>& name_to_label, bool bbox_multi, AnnotatedDatum* anno_datum) {
   return ReadRichImageToAnnotatedDatum(filename, labelname, height, width, 0, 0,
                       is_color, encoding, type, labeltype, name_to_label,
-                      anno_datum);
+                      bbox_multi, anno_datum);
 }
 
 bool ReadXMLToAnnotatedDatum(const string& labelname, const int img_height,
     const int img_width, const std::map<string, int>& name_to_label,
-    AnnotatedDatum* anno_datum);
+    const bool bbox_multi, AnnotatedDatum* anno_datum);
 
 bool ReadJSONToAnnotatedDatum(const string& labelname, const int img_height,
     const int img_width, const std::map<string, int>& name_to_label,

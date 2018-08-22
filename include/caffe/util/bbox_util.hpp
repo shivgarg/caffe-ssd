@@ -330,6 +330,14 @@ void EncodeConfPrediction(const Dtype* conf_data, const int num,
       const map<int, vector<NormalizedBBox> >& all_gt_bboxes,
       Dtype* conf_pred_data, Dtype* conf_gt_data);
 
+template <typename Dtype>
+void EncodeAttrConfPrediction(const Dtype* conf_data, const int num,
+      const int num_priors, const MultiBoxLossParameter& multibox_loss_param,
+      const vector<map<int, vector<int> > >& all_match_indices,
+      const vector<vector<int> >& all_neg_indices,
+      const map<int, vector<NormalizedBBox> >& all_gt_bboxes,
+      Dtype* conf_pred_data, Dtype* conf_gt_data);
+
 // Get prior bounding boxes from prior_data.
 //    prior_data: 1 x 2 x num_priors * 4 x 1 blob.
 //    num_priors: number of priors.

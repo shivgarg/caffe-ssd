@@ -126,6 +126,7 @@ message NormalizedBBox {
   optional bool difficult = 6;
   optional float score = 7;
   optional float size = 8;
+  optional int32 attr = 9;
 }
 
 // Annotation for each object instance.
@@ -1034,6 +1035,8 @@ message DetectionOutputParameter {
   optional float visualize_threshold = 11;
   // If provided, save outputs to video file.
   optional string save_file = 12;
+  // Number of attributes
+  optional uint32 num_attr = 13 [default = 0];
 }
 
 message DropoutParameter {
@@ -1312,6 +1315,10 @@ message MultiBoxLossParameter {
   optional NonMaximumSuppressionParameter nms_param = 21;
   optional int32 sample_size = 22 [default = 64];
   optional bool use_prior_for_nms = 23 [default = false];
+  // Number of attributes for a single bounding box
+  optional uint32 num_attr = 24 [default = 0];
+  optional ConfLossType attr_conf_loss_type = 25 [default = SOFTMAX];
+
 }
 
 message MVNParameter {

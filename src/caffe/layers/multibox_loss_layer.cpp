@@ -27,6 +27,12 @@ void MultiBoxLossLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   // Get other parameters.
   CHECK(multibox_loss_param.has_num_classes()) << "Must provide num_classes.";
   num_classes_ = multibox_loss_param.num_classes();
+  
+  num_attr_ = multibox_loss_param.num_attr();
+  if(num_attr_ > 0 && this->layer_param_.propagate_down_size() == 0) {
+    this->layer_param_.add_propagate_down(true);
+  }
+
   CHECK_GE(num_classes_, 1) << "num_classes should not be less than 1.";
   share_location_ = multibox_loss_param.share_location();
   loc_classes_ = share_location_ ? 1 : num_classes_;
@@ -126,6 +132,46 @@ void MultiBoxLossLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   } else {
     LOG(FATAL) << "Unknown confidence loss type.";
   }
+
+  if(num_attr_ > 0) {
+    // Set up attribute confidence loss layer.
+    attr_conf_loss_type_ = multibox_loss_param.attr_conf_loss_type();
+    attr_conf_bottom_vec_.push_back(&attr_conf_pred_);
+    attr_conf_bottom_vec_.push_back(&attr_conf_gt_);
+    attr_conf_loss_.Reshape(loss_shape);
+    attr_conf_top_vec_.push_back(&attr_conf_loss_);
+    if (attr_conf_loss_type_ == MultiBoxLossParameter_ConfLossType_SOFTMAX) {
+      LayerParameter layer_param;
+      layer_param.set_name(this->layer_param_.name() + "_softmax_attr_conf");
+      layer_param.set_type("SoftmaxWithLoss");
+      layer_param.add_loss_weight(Dtype(1.));
+      layer_param.mutable_loss_param()->set_normalization(
+          LossParameter_NormalizationMode_NONE);
+      SoftmaxParameter* softmax_param = layer_param.mutable_softmax_param();
+      softmax_param->set_axis(1);
+      // Fake reshape.
+      vector<int> attr_conf_shape(1, 1);
+      attr_conf_gt_.Reshape(attr_conf_shape);
+      attr_conf_shape.push_back(num_attr_);
+      attr_conf_pred_.Reshape(attr_conf_shape);
+      attr_conf_loss_layer_ = LayerRegistry<Dtype>::CreateLayer(layer_param);
+      attr_conf_loss_layer_->SetUp(attr_conf_bottom_vec_, attr_conf_top_vec_);
+    } else if (attr_conf_loss_type_ == MultiBoxLossParameter_ConfLossType_LOGISTIC) {
+      LayerParameter layer_param;
+      layer_param.set_name(this->layer_param_.name() + "_logistic_attr_conf");
+      layer_param.set_type("SigmoidCrossEntropyLoss");
+      layer_param.add_loss_weight(Dtype(1.));
+      // Fake reshape.
+      vector<int> attr_conf_shape(1, 1);
+      attr_conf_shape.push_back(num_attr_);
+      attr_conf_gt_.Reshape(attr_conf_shape);
+      attr_conf_pred_.Reshape(attr_conf_shape);
+      attr_conf_loss_layer_ = LayerRegistry<Dtype>::CreateLayer(layer_param);
+      attr_conf_loss_layer_->SetUp(attr_conf_bottom_vec_, attr_conf_top_vec_);
+    } else {
+      LOG(FATAL) << "Unknown confidence loss type.";
+    }
+  }
 }
 
 template <typename Dtype>
@@ -135,11 +181,21 @@ void MultiBoxLossLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
   num_ = bottom[0]->num();
   num_priors_ = bottom[2]->height() / 4;
   num_gt_ = bottom[3]->height();
+  //const MultiBoxLossParameter& multibox_loss_param =
+  //    this->layer_param_.multibox_loss_param();
+  //num_attr_ = multibox_loss_param.num_attrs();
   CHECK_EQ(bottom[0]->num(), bottom[1]->num());
+  
   CHECK_EQ(num_priors_ * loc_classes_ * 4, bottom[0]->channels())
       << "Number of priors must match number of location predictions.";
   CHECK_EQ(num_priors_ * num_classes_, bottom[1]->channels())
       << "Number of priors must match number of confidence predictions.";
+  if(num_attr_ > 0) {
+    CHECK_EQ(num_priors_ * num_classes_, bottom[2]->channels())
+      << "Number of priors must match number of attr confidence predictions.";
+    CHECK_EQ(bottom[0]->num(), bottom[2]->num());
+  }
+  
 }
 
 template <typename Dtype>
@@ -149,7 +205,11 @@ void MultiBoxLossLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
   const Dtype* conf_data = bottom[1]->cpu_data();
   const Dtype* prior_data = bottom[2]->cpu_data();
   const Dtype* gt_data = bottom[3]->cpu_data();
+  const Dtype* attr_conf_data;
 
+  if (num_attr_ > 0) {
+    attr_conf_data = bottom[4]->cpu_data();
+  }
   // Retrieve all ground truth.
   map<int, vector<NormalizedBBox> > all_gt_bboxes;
   GetGroundTruth(gt_data, num_gt_, background_label_id_, use_difficult_gt_,
@@ -238,6 +298,36 @@ void MultiBoxLossLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     conf_loss_.mutable_cpu_data()[0] = 0;
   }
 
+  // Form data to pass on to conf_loss_layer_.
+  num_attr_conf_ = num_matches_;
+  if (num_attr_ > 0 && num_attr_conf_ >= 1) {
+    // Reshape the confidence data.
+    vector<int> attr_conf_shape;
+    if (attr_conf_loss_type_ == MultiBoxLossParameter_ConfLossType_SOFTMAX) {
+      attr_conf_shape.push_back(num_attr_conf_);
+      attr_conf_gt_.Reshape(attr_conf_shape);
+      attr_conf_shape.push_back(num_attr_);
+      attr_conf_pred_.Reshape(attr_conf_shape);
+    } else if (attr_conf_loss_type_ == MultiBoxLossParameter_ConfLossType_LOGISTIC) {
+      attr_conf_shape.push_back(1);
+      attr_conf_shape.push_back(num_attr_conf_);
+      attr_conf_shape.push_back(num_attr_);
+      attr_conf_gt_.Reshape(attr_conf_shape);
+      attr_conf_pred_.Reshape(attr_conf_shape);
+    } else {
+      LOG(FATAL) << "Unknown confidence loss type.";
+    }
+    Dtype* attr_conf_pred_data = attr_conf_pred_.mutable_cpu_data();
+    Dtype* attr_conf_gt_data = attr_conf_gt_.mutable_cpu_data();
+    caffe_set(attr_conf_gt_.count(), Dtype(background_label_id_), attr_conf_gt_data);
+    EncodeAttrConfPrediction(attr_conf_data, num_, num_priors_, multibox_loss_param_,
+                         all_match_indices_, all_neg_indices_, all_gt_bboxes,
+                         attr_conf_pred_data, attr_conf_gt_data);
+    attr_conf_loss_layer_->Reshape(attr_conf_bottom_vec_, attr_conf_top_vec_);
+    attr_conf_loss_layer_->Forward(attr_conf_bottom_vec_, attr_conf_top_vec_);
+
+  }
+
   top[0]->mutable_cpu_data()[0] = 0;
   if (this->layer_param_.propagate_down(0)) {
     Dtype normalizer = LossLayer<Dtype>::GetNormalizer(
@@ -249,6 +339,11 @@ void MultiBoxLossLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     Dtype normalizer = LossLayer<Dtype>::GetNormalizer(
         normalization_, num_, num_priors_, num_matches_);
     top[0]->mutable_cpu_data()[0] += conf_loss_.cpu_data()[0] / normalizer;
+  }
+  if (num_attr_ > 0 && this->layer_param_.propagate_down(4)) {
+    Dtype normalizer = LossLayer<Dtype>::GetNormalizer(
+        normalization_, num_, num_priors_, num_matches_);
+    top[0]->mutable_cpu_data()[0] += attr_conf_loss_.cpu_data()[0] / normalizer;
   }
 }
 
@@ -360,6 +455,50 @@ void MultiBoxLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
       } else {
         // The diff is already computed and stored.
         bottom[1]->ShareDiff(conf_pred_);
+      }
+    }
+  }
+
+// Back propagate on attribute confidence prediction.
+  if (num_attr_ > 0 && propagate_down[4]) {
+    Dtype* attr_conf_bottom_diff = bottom[1]->mutable_cpu_diff();
+    caffe_set(bottom[4]->count(), Dtype(0), attr_conf_bottom_diff);
+    if (num_attr_conf_ >= 1) {
+      vector<bool> attr_conf_propagate_down;
+      // Only back propagate on prediction, not ground truth.
+      attr_conf_propagate_down.push_back(true);
+      attr_conf_propagate_down.push_back(false);
+      attr_conf_loss_layer_->Backward(attr_conf_top_vec_, attr_conf_propagate_down,
+                                 attr_conf_bottom_vec_);
+      // Scale gradient.
+      Dtype normalizer = LossLayer<Dtype>::GetNormalizer(
+          normalization_, num_, num_priors_, num_matches_);
+      Dtype loss_weight = top[0]->cpu_diff()[0] / normalizer;
+      caffe_scal(attr_conf_pred_.count(), loss_weight,
+                 attr_conf_pred_.mutable_cpu_diff());
+      // Copy gradient back to bottom[1].
+      const Dtype* attr_conf_pred_diff = attr_conf_pred_.cpu_diff();
+      
+      int count = 0;
+      for (int i = 0; i < num_; ++i) {
+          // Copy matched (positive) bboxes scores' diff.
+          const map<int, vector<int> >& match_indices = all_match_indices_[i];
+          for (map<int, vector<int> >::const_iterator it =
+               match_indices.begin(); it != match_indices.end(); ++it) {
+            const vector<int>& match_index = it->second;
+            CHECK_EQ(match_index.size(), num_priors_);
+            for (int j = 0; j < num_priors_; ++j) {
+              if (match_index[j] <= -1) {
+                continue;
+              }
+              // Copy the diff to the right place.
+              caffe_copy<Dtype>(num_attr_,
+                                attr_conf_pred_diff + count * num_attr_,
+                                attr_conf_bottom_diff + j * num_attr_);
+              ++count;
+            }
+          }
+          attr_conf_bottom_diff += bottom[4]->offset(1);
       }
     }
   }

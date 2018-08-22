@@ -46,6 +46,35 @@ void DetectionOutputLayer<Dtype>::Forward_gpu(
   PermuteDataGPU<Dtype>(bottom[1]->count(), bottom[1]->gpu_data(),
       num_classes_, num_priors_, 1, conf_permute_data);
   const Dtype* conf_cpu_data = conf_permute_.cpu_data();
+  
+  const Dtype* attr_conf_data;
+  vector<vector<pair<int, float> > > all_attr_class;
+
+  if (num_attr_ > 0) {
+    attr_conf_data = bottom[3]->cpu_data();
+    if (num_attr_ > 0) {
+      all_attr_class.resize(num);
+      for (int i = 0; i < num; ++i) {
+        vector<pair<int, float> >& attr_class = all_attr_class[i];
+        for (int p = 0; p < num_priors_; ++p) {
+          int start_idx = p * num_attr_;
+          int attr_cls;
+          float max_prob = -1;
+          for (int a = 0; a < num_attr_; a++) {
+            if (max_prob < attr_conf_data[start_idx + a]) {
+              max_prob = attr_conf_data[start_idx + a];
+              attr_cls = a;
+            }  
+          }
+          attr_class.push_back(std::make_pair(attr_cls,max_prob));
+          for (int c = 0; c < num_classes_; ++c) {
+            conf_cpu_data[i*num_classes_*num_priors_ + c*num_priors_ + p]  *= max_prob;
+          }
+        }
+        attr_conf_data += num_priors_ * num_attr_;
+      }
+    }
+  }
 
   int num_kept = 0;
   vector<map<int, vector<int> > > all_indices;
@@ -107,7 +136,7 @@ void DetectionOutputLayer<Dtype>::Forward_gpu(
 
   vector<int> top_shape(2, 1);
   top_shape.push_back(num_kept);
-  top_shape.push_back(7);
+  top_shape.push_back(9);
   Dtype* top_data;
   if (num_kept == 0) {
     LOG(INFO) << "Couldn't find any detections";
@@ -118,7 +147,7 @@ void DetectionOutputLayer<Dtype>::Forward_gpu(
     // Generate fake results per image.
     for (int i = 0; i < num; ++i) {
       top_data[0] = i;
-      top_data += 7;
+      top_data += 9;
     }
   } else {
     top[0]->Reshape(top_shape);
@@ -152,19 +181,22 @@ void DetectionOutputLayer<Dtype>::Forward_gpu(
       }
       for (int j = 0; j < indices.size(); ++j) {
         int idx = indices[j];
-        top_data[count * 7] = i;
-        top_data[count * 7 + 1] = label;
-        top_data[count * 7 + 2] = cur_conf_data[idx];
+        top_data[count * 9] = i;
+        top_data[count * 9 + 1] = label;
+        top_data[count * 9 + 2] = cur_conf_data[idx];
         for (int k = 0; k < 4; ++k) {
-          top_data[count * 7 + 3 + k] = cur_bbox_data[idx * 4 + k];
+          top_data[count * 9 + 3 + k] = cur_bbox_data[idx * 4 + k];
         }
+        top_data[count * 9 + 7] = attr_class[idx].first;
+        top_data[count * 9 + 8] = attr_class[idx].second;
+        
         if (need_save_) {
           // Generate output bbox.
           NormalizedBBox bbox;
-          bbox.set_xmin(top_data[count * 7 + 3]);
-          bbox.set_ymin(top_data[count * 7 + 4]);
-          bbox.set_xmax(top_data[count * 7 + 5]);
-          bbox.set_ymax(top_data[count * 7 + 6]);
+          bbox.set_xmin(top_data[count * 9 + 3]);
+          bbox.set_ymin(top_data[count * 9 + 4]);
+          bbox.set_xmax(top_data[count * 9 + 5]);
+          bbox.set_ymax(top_data[count * 9 + 6]);
           NormalizedBBox out_bbox;
           OutputBBox(bbox, sizes_[name_count_], has_resize_, resize_param_,
                      &out_bbox);
@@ -194,6 +226,8 @@ void DetectionOutputLayer<Dtype>::Forward_gpu(
           }
           cur_det.add_child("bbox", cur_bbox);
           cur_det.put<float>("score", score);
+          cur_det.put<int>("attr_id", top_data[count * 9 + 7]);
+          cur_det.put<float>("attr_conf",top_data[count * 9 + 8]);
 
           detections_.push_back(std::make_pair("", cur_det));
         }
@@ -225,6 +259,9 @@ void DetectionOutputLayer<Dtype>::Forward_gpu(
             }
             string image_name = pt.get<string>("image_id");
             float score = pt.get<float>("score");
+            float attr_id = pt.get<float>("attr_id");
+            float attr_conf = pt.get<float>("attr_conf");
+            
             vector<int> bbox;
             BOOST_FOREACH(ptree::value_type &elem, pt.get_child("bbox")) {
               bbox.push_back(static_cast<int>(elem.second.get_value<float>()));
@@ -234,6 +271,7 @@ void DetectionOutputLayer<Dtype>::Forward_gpu(
             *(outfiles[label_name]) << " " << bbox[0] << " " << bbox[1];
             *(outfiles[label_name]) << " " << bbox[0] + bbox[2];
             *(outfiles[label_name]) << " " << bbox[1] + bbox[3];
+            *(outfiles[label_name]) << " " << attr_id << " " << attr_conf;
             *(outfiles[label_name]) << std::endl;
           }
           for (int c = 0; c < num_classes_; ++c) {

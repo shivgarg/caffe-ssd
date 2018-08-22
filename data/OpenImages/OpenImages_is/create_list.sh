@@ -20,7 +20,7 @@ do
 
   label_file=$bash_dir/$dataset"_label.txt"
   cp $dataset_file $label_file
-  sed -i "s/^/annotations_is\//g" $label_file
+  sed -i "s/^/annotations_is_multi\//g" $label_file
   sed -i "s/$/.xml/g" $label_file
 
     paste -d' ' $img_file $label_file >> $dst_file

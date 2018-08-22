@@ -19,6 +19,8 @@ void DetectionOutputLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       this->layer_param_.detection_output_param();
   CHECK(detection_output_param.has_num_classes()) << "Must specify num_classes";
   num_classes_ = detection_output_param.num_classes();
+  CHECK(detection_output_param.has_num_attr()) << "Must specify num_attr";
+  num_attr_ = detection_output_param.num_attr();
   share_location_ = detection_output_param.share_location();
   num_loc_classes_ = share_location_ ? 1 : num_classes_;
   background_label_id_ = detection_output_param.background_label_id();
@@ -122,6 +124,9 @@ void DetectionOutputLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
     bbox_permute_.ReshapeLike(*(bottom[0]));
   }
   conf_permute_.ReshapeLike(*(bottom[1]));
+  if (num_attr_ > 0) {
+    attr_conf_permute_.ReshapeLike(*(bottom[3]));
+  }
 }
 
 template <typename Dtype>
@@ -161,18 +166,27 @@ void DetectionOutputLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
     conf_permute_.ReshapeLike(*(bottom[1]));
   }
   num_priors_ = bottom[2]->height() / 4;
+  if (num_attr_ > 0) {
+    if (attr_conf_permute_.num() != bottom[3]->num() ||
+        attr_conf_permute_.count(1) != bottom[3]->count(1)) {
+      attr_conf_permute_.ReshapeLike(*(bottom[3]));
+    }
+    CHECK_EQ(num_priors_ * num_attr_, bottom[3]->channels())
+      << "Number of priors must match number of attribute confidence predictions.";
+  }
   CHECK_EQ(num_priors_ * num_loc_classes_ * 4, bottom[0]->channels())
       << "Number of priors must match number of location predictions.";
   CHECK_EQ(num_priors_ * num_classes_, bottom[1]->channels())
       << "Number of priors must match number of confidence predictions.";
+  
   // num() and channels() are 1.
   vector<int> top_shape(2, 1);
   // Since the number of bboxes to be kept is unknown before nms, we manually
   // set it to (fake) 1.
   top_shape.push_back(1);
-  // Each row is a 7 dimension vector, which stores
-  // [image_id, label, confidence, xmin, ymin, xmax, ymax]
-  top_shape.push_back(7);
+  // Each row is a 9 dimension vector, which stores
+  // [image_id, label, confidence, xmin, ymin, xmax, ymax, attr_label, attr_confidence]
+  top_shape.push_back(9);
   top[0]->Reshape(top_shape);
 }
 
@@ -182,6 +196,10 @@ void DetectionOutputLayer<Dtype>::Forward_cpu(
   const Dtype* loc_data = bottom[0]->cpu_data();
   const Dtype* conf_data = bottom[1]->cpu_data();
   const Dtype* prior_data = bottom[2]->cpu_data();
+  const Dtype* attr_conf_data;
+  if (num_attr_ > 0) {
+    attr_conf_data = bottom[3]->cpu_data();
+  }
   const int num = bottom[0]->num();
 
   // Retrieve all location predictions.
@@ -193,6 +211,31 @@ void DetectionOutputLayer<Dtype>::Forward_cpu(
   vector<map<int, vector<float> > > all_conf_scores;
   GetConfidenceScores(conf_data, num, num_priors_, num_classes_,
                       &all_conf_scores);
+  
+  vector<vector<pair<int, float> > > all_attr_class;
+  if (num_attr_ > 0) {
+    all_attr_class.resize(num);
+    for (int i = 0; i < num; ++i) {
+      vector<pair<int, float> >& attr_class = all_attr_class[i];
+      map<int, vector<float> >& label_scores = all_conf_scores[i];
+      for (int p = 0; p < num_priors_; ++p) {
+        int start_idx = p * num_attr_;
+        int attr_cls;
+        float max_prob = -1;
+        for (int a = 0; a < num_attr_; a++) {
+          if (max_prob < attr_conf_data[start_idx + a]) {
+            max_prob = attr_conf_data[start_idx + a];
+            attr_cls = a;
+          }  
+        }
+        attr_class.push_back(std::make_pair(attr_cls,max_prob));
+        for (int c = 0; c < num_classes_; ++c) {
+          label_scores[c][p] *= max_prob;
+        }
+      }
+      attr_conf_data += num_priors_ * num_attr_;
+    }
+  }
 
   // Retrieve all prior bboxes. It is same within a batch since we assume all
   // images in a batch are of same dimension.
@@ -276,7 +319,7 @@ void DetectionOutputLayer<Dtype>::Forward_cpu(
 
   vector<int> top_shape(2, 1);
   top_shape.push_back(num_kept);
-  top_shape.push_back(7);
+  top_shape.push_back(9);
   Dtype* top_data;
   if (num_kept == 0) {
     LOG(INFO) << "Couldn't find any detections";
@@ -287,7 +330,7 @@ void DetectionOutputLayer<Dtype>::Forward_cpu(
     // Generate fake results per image.
     for (int i = 0; i < num; ++i) {
       top_data[0] = i;
-      top_data += 7;
+      top_data += 9;
     }
   } else {
     top[0]->Reshape(top_shape);
@@ -298,6 +341,7 @@ void DetectionOutputLayer<Dtype>::Forward_cpu(
   boost::filesystem::path output_directory(output_directory_);
   for (int i = 0; i < num; ++i) {
     const map<int, vector<float> >& conf_scores = all_conf_scores[i];
+    const vector<pair<int, float> >& attr_class = all_attr_class[i];
     const LabelBBox& decode_bboxes = all_decode_bboxes[i];
     for (map<int, vector<int> >::iterator it = all_indices[i].begin();
          it != all_indices[i].end(); ++it) {
@@ -324,19 +368,21 @@ void DetectionOutputLayer<Dtype>::Forward_cpu(
       }
       for (int j = 0; j < indices.size(); ++j) {
         int idx = indices[j];
-        top_data[count * 7] = i;
-        top_data[count * 7 + 1] = label;
-        top_data[count * 7 + 2] = scores[idx];
+        top_data[count * 9] = i;
+        top_data[count * 9 + 1] = label;
+        top_data[count * 9 + 2] = scores[idx];
         const NormalizedBBox& bbox = bboxes[idx];
-        top_data[count * 7 + 3] = bbox.xmin();
-        top_data[count * 7 + 4] = bbox.ymin();
-        top_data[count * 7 + 5] = bbox.xmax();
-        top_data[count * 7 + 6] = bbox.ymax();
+        top_data[count * 9 + 3] = bbox.xmin();
+        top_data[count * 9 + 4] = bbox.ymin();
+        top_data[count * 9 + 5] = bbox.xmax();
+        top_data[count * 9 + 6] = bbox.ymax();
+        top_data[count * 9 + 7] = attr_class[idx].first;
+        top_data[count * 9 + 8] = attr_class[idx].second;
         if (need_save_) {
           NormalizedBBox out_bbox;
           OutputBBox(bbox, sizes_[name_count_], has_resize_, resize_param_,
                      &out_bbox);
-          float score = top_data[count * 7 + 2];
+          float score = top_data[count * 9 + 2];
           float xmin = out_bbox.xmin();
           float ymin = out_bbox.ymin();
           float xmax = out_bbox.xmax();
@@ -362,6 +408,8 @@ void DetectionOutputLayer<Dtype>::Forward_cpu(
           }
           cur_det.add_child("bbox", cur_bbox);
           cur_det.put<float>("score", score);
+          cur_det.put<int>("attr_id", top_data[count * 9 + 7]);
+          cur_det.put<float>("attr_conf",top_data[count * 9 + 8]);
 
           detections_.push_back(std::make_pair("", cur_det));
         }
@@ -393,6 +441,8 @@ void DetectionOutputLayer<Dtype>::Forward_cpu(
             }
             string image_name = pt.get<string>("image_id");
             float score = pt.get<float>("score");
+            float attr_id = pt.get<float>("attr_id");
+            float attr_conf = pt.get<float>("attr_conf");
             vector<int> bbox;
             BOOST_FOREACH(ptree::value_type &elem, pt.get_child("bbox")) {
               bbox.push_back(static_cast<int>(elem.second.get_value<float>()));
@@ -402,6 +452,7 @@ void DetectionOutputLayer<Dtype>::Forward_cpu(
             *(outfiles[label_name]) << " " << bbox[0] << " " << bbox[1];
             *(outfiles[label_name]) << " " << bbox[0] + bbox[2];
             *(outfiles[label_name]) << " " << bbox[1] + bbox[3];
+            *(outfiles[label_name]) << " " << attr_id << " " << attr_conf;
             *(outfiles[label_name]) << std::endl;
           }
           for (int c = 0; c < num_classes_; ++c) {

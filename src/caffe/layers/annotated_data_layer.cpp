@@ -81,7 +81,7 @@ void AnnotatedDataLayer<Dtype>::DataLayerSetUp(
         // we store the bbox information in a specific format. In specific:
         // All bboxes are stored in one spatial plane (num and channels are 1)
         // And each row contains one and only one box in the following format:
-        // [item_id, group_label, instance_id, xmin, ymin, xmax, ymax, diff]
+        // [item_id, group_label, instance_id, xmin, ymin, xmax, ymax, diff, attr]
         // Note: Refer to caffe.proto for details about group_label and
         // instance_id.
         for (int g = 0; g < anno_datum.annotation_group_size(); ++g) {
@@ -93,7 +93,7 @@ void AnnotatedDataLayer<Dtype>::DataLayerSetUp(
         // cpu_data and gpu_data for consistent prefetch thread. Thus we make
         // sure there is at least one bbox.
         label_shape[2] = std::max(num_bboxes, 1);
-        label_shape[3] = 8;
+        label_shape[3] = 9;
       } else {
         LOG(FATAL) << "Unknown annotation type.";
       }
@@ -265,12 +265,12 @@ void AnnotatedDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
     if (anno_type_ == AnnotatedDatum_AnnotationType_BBOX) {
       label_shape[0] = 1;
       label_shape[1] = 1;
-      label_shape[3] = 8;
+      label_shape[3] = 9;
       if (num_bboxes == 0) {
         // Store all -1 in the label.
         label_shape[2] = 1;
         batch->label_.Reshape(label_shape);
-        caffe_set<Dtype>(8, -1, batch->label_.mutable_cpu_data());
+        caffe_set<Dtype>(9, -1, batch->label_.mutable_cpu_data());
       } else {
         // Reshape the label and store the annotation.
         label_shape[2] = num_bboxes;
@@ -292,6 +292,7 @@ void AnnotatedDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
               top_label[idx++] = bbox.xmax();
               top_label[idx++] = bbox.ymax();
               top_label[idx++] = bbox.difficult();
+              top_label[idx++] = bbox.label();
             }
           }
         }

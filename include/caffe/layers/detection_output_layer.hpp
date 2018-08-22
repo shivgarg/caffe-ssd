@@ -74,6 +74,7 @@ class DetectionOutputLayer : public Layer<Dtype> {
   }
 
   int num_classes_;
+  int num_attr_;
   bool share_location_;
   int num_loc_classes_;
   int background_label_id_;
@@ -111,6 +112,7 @@ class DetectionOutputLayer : public Layer<Dtype> {
   Blob<Dtype> bbox_preds_;
   Blob<Dtype> bbox_permute_;
   Blob<Dtype> conf_permute_;
+  Blob<Dtype> attr_conf_permute_;
 };
 
 }  // namespace caffe

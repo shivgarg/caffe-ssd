@@ -65,6 +65,7 @@ DEFINE_bool(encoded, false,
     "When this option is on, the encoded image will be save in datum");
 DEFINE_string(encode_type, "",
     "Optional: What type should we encode the image as ('png','jpg',...).");
+DEFINE_bool(bbox_multi_label,false,"Specifies to read two labels per bbox");
 
 typedef struct _LMDBData {
   bool is_color;
@@ -75,6 +76,7 @@ typedef struct _LMDBData {
   string label_type;
   string label_map_file;
   bool check_label;
+  bool bbox_multi;
   std::map<std::string, int> name_to_label;
 
   int min_dim;
@@ -127,7 +129,7 @@ void *write_to_lmdb(void* _data) {
       std::string labelname = data->root_folder + boost::get<std::string>(data->lines[line_id].second);
       status = ReadRichImageToAnnotatedDatum(filename, labelname, data->resize_height,
           data->resize_width, data->min_dim, data->max_dim, data->is_color, enc, data->type, data->label_type,
-          data->name_to_label, &anno_datum);
+          data->name_to_label, data->bbox_multi, &anno_datum);
       anno_datum.set_type(AnnotatedDatum_AnnotationType_BBOX);
     }
     if (status == false) {
@@ -236,11 +238,11 @@ int main(int argc, char** argv) {
   if (encode_type.size() && !encoded)
     LOG(INFO) << "encode_type specified, assuming encoded=true.";
 
+  bool bbox_multi = FLAGS_bbox_multi_label;
   int min_dim = std::max<int>(0, FLAGS_min_dim);
   int max_dim = std::max<int>(0, FLAGS_max_dim);
   int resize_height = std::max<int>(0, FLAGS_resize_height);
   int resize_width = std::max<int>(0, FLAGS_resize_width);
-
   // Create new DB
   scoped_ptr<db::DB> db(db::GetDB(FLAGS_backend));
   db->Open(argv[3], db::NEW);
@@ -263,6 +265,7 @@ int main(int argc, char** argv) {
     lmdbData[i].name_to_label = name_to_label;
     lmdbData[i].min_dim = min_dim;
     lmdbData[i].max_dim = max_dim;
+    lmdbData[i].bbox_multi = bbox_multi;    
     lmdbData[i].resize_height = resize_height;
     lmdbData[i].resize_width = resize_width;
     lmdbData[i].root_folder = root_folder;

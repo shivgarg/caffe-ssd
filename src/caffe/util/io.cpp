@@ -196,7 +196,7 @@ bool ReadRichImageToAnnotatedDatum(const string& filename,
     const int min_dim, const int max_dim, const bool is_color,
     const string& encoding, const AnnotatedDatum_AnnotationType type,
     const string& labeltype, const std::map<string, int>& name_to_label,
-    AnnotatedDatum* anno_datum) {
+    bool bbox_multi, AnnotatedDatum* anno_datum) {
   // Read image to datum.
   bool status = ReadImageToDatum(filename, -1, height, width,
                                  min_dim, max_dim, is_color, encoding,
@@ -214,7 +214,7 @@ bool ReadRichImageToAnnotatedDatum(const string& filename,
       GetImageSize(filename, &ori_height, &ori_width);
       if (labeltype == "xml") {
         return ReadXMLToAnnotatedDatum(labelfile, ori_height, ori_width,
-                                       name_to_label, anno_datum);
+                                       name_to_label, bbox_multi, anno_datum);
       } else if (labeltype == "json") {
         return ReadJSONToAnnotatedDatum(labelfile, ori_height, ori_width,
                                         name_to_label, anno_datum);
@@ -257,7 +257,7 @@ bool ReadFileToDatum(const string& filename, const int label,
 // Parse VOC/ILSVRC detection annotation.
 bool ReadXMLToAnnotatedDatum(const string& labelfile, const int img_height,
     const int img_width, const std::map<string, int>& name_to_label,
-    AnnotatedDatum* anno_datum) {
+    const bool bbox_multi, AnnotatedDatum* anno_datum) {
   ptree pt;
   read_xml(labelfile, pt);
 
@@ -322,6 +322,7 @@ bool ReadXMLToAnnotatedDatum(const string& labelfile, const int img_height,
           int ymin = pt2.get("ymin", 0);
           int xmax = pt2.get("xmax", 0);
           int ymax = pt2.get("ymax", 0);
+          int sec_label = pt2.get("label",0);
           CHECK_NOTNULL(anno);
           LOG_IF(WARNING, xmin > width) << labelfile <<
               " bounding box exceeds image boundary.";
@@ -350,6 +351,7 @@ bool ReadXMLToAnnotatedDatum(const string& labelfile, const int img_height,
           bbox->set_xmax(static_cast<float>(xmax) / width);
           bbox->set_ymax(static_cast<float>(ymax) / height);
           bbox->set_difficult(difficult);
+          bbox->set_label(sec_label);
         }
       }
     }

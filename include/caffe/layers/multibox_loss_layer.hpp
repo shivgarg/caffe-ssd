@@ -75,8 +75,23 @@ class MultiBoxLossLayer : public LossLayer<Dtype> {
   // confidence loss.
   Blob<Dtype> conf_loss_;
 
+  // The internal confidence loss layer.
+  shared_ptr<Layer<Dtype> > attr_conf_loss_layer_;
+  ConfLossType attr_conf_loss_type_;
+  // bottom vector in forward function
+  vector<Blob<Dtype>*> attr_conf_bottom_vec_;
+  // top vector in forward fucntion
+  vector<Blob<Dtype>*> attr_conf_top_vec_;
+  // blob storing the attribute confidence values
+  Blob<Dtype> attr_conf_pred_;
+  // blob storing corresponding ground truth label
+  Blob<Dtype> attr_conf_gt_;
+  // attribute confidence loss
+  Blob<Dtype> attr_conf_loss_;
+
   MultiBoxLossParameter multibox_loss_param_;
   int num_classes_;
+  int num_attr_;
   bool share_location_;
   MatchType match_type_;
   float overlap_threshold_;
@@ -100,6 +115,7 @@ class MultiBoxLossLayer : public LossLayer<Dtype> {
 
   int num_matches_;
   int num_conf_;
+  int num_attr_conf_;
   vector<map<int, vector<int> > > all_match_indices_;
   vector<vector<int> > all_neg_indices_;
 

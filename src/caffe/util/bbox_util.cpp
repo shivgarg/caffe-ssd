@@ -1077,6 +1077,7 @@ void GetGroundTruth(const Dtype* gt_data, const int num_gt,
     bbox.set_xmax(gt_data[start_idx + 5]);
     bbox.set_ymax(gt_data[start_idx + 6]);
     bbox.set_difficult(difficult);
+    bbox.set_attr(gt_data[start_idx + 8]);
     float bbox_size = BBoxSize(bbox);
     bbox.set_size(bbox_size);
     (*all_gt_bboxes)[item_id].push_back(bbox);
@@ -1650,6 +1651,73 @@ template void EncodeConfPrediction(const double* conf_data, const int num,
       const vector<vector<int> >& all_neg_indices,
       const map<int, vector<NormalizedBBox> >& all_gt_bboxes,
       double* conf_pred_data, double* conf_gt_data);
+
+
+template <typename Dtype>
+void EncodeAttrConfPrediction(const Dtype* attr_conf_data, const int num,
+      const int num_priors, const MultiBoxLossParameter& multibox_loss_param,
+      const vector<map<int, vector<int> > >& all_match_indices,
+      const vector<vector<int> >& all_neg_indices,
+      const map<int, vector<NormalizedBBox> >& all_gt_bboxes,
+      Dtype* attr_conf_pred_data, Dtype* attr_conf_gt_data) {
+  // CHECK_EQ(num, all_match_indices.size());
+  // CHECK_EQ(num, all_neg_indices.size());
+  // Retrieve parameters.
+  CHECK(multibox_loss_param.has_num_attr()) << "Must provide num_attr.";
+  const int num_attr = multibox_loss_param.num_attr();
+  CHECK_GE(num_attr, 1) << "num_classes should not be less than 1.";
+  const int background_label_id = multibox_loss_param.background_label_id();
+  
+  const ConfLossType attr_conf_loss_type = multibox_loss_param.attr_conf_loss_type();
+  int count = 0;
+  for (int i = 0; i < num; ++i) {
+    if (all_gt_bboxes.find(i) != all_gt_bboxes.end()) {
+      // Save matched (positive) bboxes scores and labels.
+      const map<int, vector<int> >& match_indices = all_match_indices[i];
+      for (map<int, vector<int> >::const_iterator it =
+          match_indices.begin(); it != match_indices.end(); ++it) {
+        const vector<int>& match_index = it->second;
+        CHECK_EQ(match_index.size(), num_priors);
+        for (int j = 0; j < num_priors; ++j) {
+          if (match_index[j] <= -1) {
+            continue;
+          }
+          const int gt_label = all_gt_bboxes.find(i)->second[match_index[j]].attr();
+          switch (attr_conf_loss_type) {
+            case MultiBoxLossParameter_ConfLossType_SOFTMAX:
+              attr_conf_gt_data[j] = gt_label;
+              break;
+            case MultiBoxLossParameter_ConfLossType_LOGISTIC:
+              attr_conf_gt_data[j * num_attr + gt_label] = 1;
+              break;
+            default:
+              LOG(FATAL) << "Unknown conf loss type.";
+          }
+          caffe_copy<Dtype>(num_attr, attr_conf_data + j * num_attr,
+                attr_conf_pred_data + count * num_attr);
+          ++count;
+          }
+        }
+      }
+      attr_conf_data += num_priors * num_attr;
+  }
+}
+
+// Explicite initialization.
+template void EncodeAttrConfPrediction(const float* conf_data, const int num,
+      const int num_priors, const MultiBoxLossParameter& multibox_loss_param,
+      const vector<map<int, vector<int> > >& all_match_indices,
+      const vector<vector<int> >& all_neg_indices,
+      const map<int, vector<NormalizedBBox> >& all_gt_bboxes,
+      float* conf_pred_data, float* conf_gt_data);
+template void EncodeAttrConfPrediction(const double* conf_data, const int num,
+      const int num_priors, const MultiBoxLossParameter& multibox_loss_param,
+      const vector<map<int, vector<int> > >& all_match_indices,
+      const vector<vector<int> >& all_neg_indices,
+      const map<int, vector<NormalizedBBox> >& all_gt_bboxes,
+      double* conf_pred_data, double* conf_gt_data);
+
+
 
 template <typename Dtype>
 void GetPriorBBoxes(const Dtype* prior_data, const int num_priors,

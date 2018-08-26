@@ -273,6 +273,9 @@ ignore_cross_boundary_bbox = False
 mining_type = P.MultiBoxLoss.MAX_NEGATIVE
 neg_pos_ratio = 3.
 loc_weight = (neg_pos_ratio + 1.) / 4.
+
+image_label_loss = P.AnnotatedData.SOFTMAX
+num_image_labels = 9
 multibox_loss_param = {
     'loc_loss_type': P.MultiBoxLoss.SMOOTH_L1,
     'conf_loss_type': P.MultiBoxLoss.SOFTMAX,
@@ -429,13 +432,17 @@ make_if_not_exist(snapshot_dir)
 # Create train net.
 net = caffe.NetSpec()
 net.data, net.label = CreateAnnotatedDataLayer(train_data, batch_size=batch_size_per_device,
-        train=True, output_label=True, label_map_file=label_map_file,
-        transform_param=train_transform_param, batch_sampler=batch_sampler)
+        image_label_loss=image_label_loss ,train=True, output_label=True, label_map_file=label_map_file,
+        per_image_label=True, transform_param=train_transform_param, batch_sampler=batch_sampler)
 
 VGGNetBody(net, from_layer='data', fully_conv=True, reduced=True, dilated=True,
     dropout=False)
 
 AddExtraLayers(net, use_batchnorm, lr_mult=lr_mult)
+
+net.global_pool1 = L.Pooling(net[net.keys()[-1]], pool=P.Pooling.MAX, global_pooling=True)
+net.inner_product1 = L.InnerProduct(net.global_pool1, num_output=num_image_labels)
+
 
 mbox_layers = CreateMultiBoxHead(net, data_layer='data', from_layers=mbox_source_layers,
         use_batchnorm=use_batchnorm, min_sizes=min_sizes, max_sizes=max_sizes,
@@ -458,8 +465,8 @@ shutil.copy(train_net_file, job_dir)
 # Create test net.
 net = caffe.NetSpec()
 net.data, net.label = CreateAnnotatedDataLayer(test_data, batch_size=test_batch_size,
-        train=False, output_label=True, label_map_file=label_map_file,
-        transform_param=test_transform_param)
+        image_label_loss=image_label_loss, train=False, output_label=True, label_map_file=label_map_file,
+        per_image_label=True, transform_param=test_transform_param)
 
 VGGNetBody(net, from_layer='data', fully_conv=True, reduced=True, dilated=True,
     dropout=False)

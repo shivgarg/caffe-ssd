@@ -45,34 +45,32 @@ void DetectionOutputLayer<Dtype>::Forward_gpu(
   Dtype* conf_permute_data = conf_permute_.mutable_gpu_data();
   PermuteDataGPU<Dtype>(bottom[1]->count(), bottom[1]->gpu_data(),
       num_classes_, num_priors_, 1, conf_permute_data);
-  const Dtype* conf_cpu_data = conf_permute_.cpu_data();
+  Dtype* conf_cpu_data = conf_permute_.mutable_cpu_data();
   
   const Dtype* attr_conf_data;
   vector<vector<pair<int, float> > > all_attr_class;
 
   if (num_attr_ > 0) {
     attr_conf_data = bottom[3]->cpu_data();
-    if (num_attr_ > 0) {
-      all_attr_class.resize(num);
-      for (int i = 0; i < num; ++i) {
-        vector<pair<int, float> >& attr_class = all_attr_class[i];
-        for (int p = 0; p < num_priors_; ++p) {
-          int start_idx = p * num_attr_;
-          int attr_cls;
-          float max_prob = -1;
-          for (int a = 0; a < num_attr_; a++) {
-            if (max_prob < attr_conf_data[start_idx + a]) {
-              max_prob = attr_conf_data[start_idx + a];
-              attr_cls = a;
-            }  
-          }
-          attr_class.push_back(std::make_pair(attr_cls,max_prob));
-          for (int c = 0; c < num_classes_; ++c) {
-            conf_cpu_data[i*num_classes_*num_priors_ + c*num_priors_ + p]  *= max_prob;
-          }
+    all_attr_class.resize(num);
+    for (int i = 0; i < num; ++i) {
+      vector<pair<int, float> >& attr_class = all_attr_class[i];
+      for (int p = 0; p < num_priors_; ++p) {
+        int start_idx = p * num_attr_;
+        int attr_cls;
+        float max_prob = -1;
+        for (int a = 0; a < num_attr_; a++) {
+          if (max_prob < attr_conf_data[start_idx + a]) {
+            max_prob = attr_conf_data[start_idx + a];
+            attr_cls = a;
+          }  
         }
-        attr_conf_data += num_priors_ * num_attr_;
+        attr_class.push_back(std::make_pair(attr_cls,max_prob));
+        for (int c = 0; c < num_classes_; ++c) {
+          conf_cpu_data[i*num_classes_*num_priors_ + c*num_priors_ + p]  *= max_prob;
+        }
       }
+      attr_conf_data += num_priors_ * num_attr_;
     }
   }
 
@@ -157,6 +155,7 @@ void DetectionOutputLayer<Dtype>::Forward_gpu(
   int count = 0;
   boost::filesystem::path output_directory(output_directory_);
   for (int i = 0; i < num; ++i) {
+    vector<pair<int, float> >& attr_class = all_attr_class[i];
     const int conf_idx = i * num_classes_ * num_priors_;
     int bbox_idx;
     if (share_location_) {

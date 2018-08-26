@@ -104,6 +104,22 @@ void AnnotatedDataLayer<Dtype>::DataLayerSetUp(
     for (int i = 0; i < this->PREFETCH_COUNT; ++i) {
       this->prefetch_[i].label_.Reshape(label_shape);
     }
+    if (anno_data_param.per_image_labels()) {
+      num_labels_ = anno_data_param.num_labels();
+      label_loss_type_ = anno_data_param.conf_loss_type();
+      if (label_loss_type_ == AnnotatedDataParameter_ConfLossType_SOFTMAX) {
+        label_shape.resize(1);
+        label_shape[0] = batch_size;
+      } else if (label_loss_type_ == AnnotatedDataParameter_ConfLossType_LOGISTIC) {
+        label_shape.resize(2);
+        label_shape[0] = batch_size;
+        label_shape[1] = num_labels_;
+      }
+      top[2]->Reshape(label_shape);
+      for (int i = 0; i < this->PREFETCH_COUNT; ++i) {
+        this->prefetch_[i].label_sup_.Reshape(label_shape);
+      }
+    }
   }
 }
 
@@ -136,8 +152,9 @@ void AnnotatedDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
 
   Dtype* top_data = batch->data_.mutable_cpu_data();
   Dtype* top_label = NULL;  // suppress warnings about uninitialized variables
-  if (this->output_labels_ && !has_anno_type_) {
-    top_label = batch->label_.mutable_cpu_data();
+  if (this->output_labels_ && anno_data_param.per_image_labels() ) {
+    top_label = batch->label_sup_.mutable_cpu_data();
+    caffe_set(batch->label_sup_.count(), 0, top_label);
   }
 
   // Store transformed annotation.
@@ -181,8 +198,8 @@ void AnnotatedDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
         int rand_idx = caffe_rng_rand() % sampled_bboxes.size();
         sampled_datum = new AnnotatedDatum();
         this->data_transformer_->CropImage(*expand_datum,
-                                           sampled_bboxes[rand_idx],
-                                           sampled_datum);
+                                          sampled_bboxes[rand_idx],
+                                          sampled_datum);
         has_sampled = true;
       } else {
         sampled_datum = expand_datum;
@@ -214,6 +231,14 @@ void AnnotatedDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
     vector<AnnotationGroup> transformed_anno_vec;
     if (this->output_labels_) {
       if (has_anno_type_) {
+        if (anno_data_param.per_image_labels()) {
+          CHECK(sampled_datum->datum().has_label()) << "Cannot find any label.";
+          if (label_loss_type_ == AnnotatedDataParameter_ConfLossType_SOFTMAX) {
+            top_label[item_id] = sampled_datum->datum().label();
+          } else if (label_loss_type_ == AnnotatedDataParameter_ConfLossType_LOGISITC) {
+            top_label[item_id*num_labels_+sampled_datum->datum().label()] = 1;
+          }
+        }
         // Make sure all data have same annotation type.
         CHECK(sampled_datum->has_type()) << "Some datum misses AnnotationType.";
         if (anno_data_param.has_anno_type()) {
@@ -225,8 +250,8 @@ void AnnotatedDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
         // Transform datum and annotation_group at the same time
         transformed_anno_vec.clear();
         this->data_transformer_->Transform(*sampled_datum,
-                                           &(this->transformed_data_),
-                                           &transformed_anno_vec);
+                                          &(this->transformed_data_),
+                                          &transformed_anno_vec);
         if (anno_type_ == AnnotatedDatum_AnnotationType_BBOX) {
           // Count the number of bboxes.
           for (int g = 0; g < transformed_anno_vec.size(); ++g) {
@@ -238,14 +263,14 @@ void AnnotatedDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
         all_anno[item_id] = transformed_anno_vec;
       } else {
         this->data_transformer_->Transform(sampled_datum->datum(),
-                                           &(this->transformed_data_));
+                                          &(this->transformed_data_));
         // Otherwise, store the label from datum.
         CHECK(sampled_datum->datum().has_label()) << "Cannot find any label.";
         top_label[item_id] = sampled_datum->datum().label();
       }
     } else {
       this->data_transformer_->Transform(sampled_datum->datum(),
-                                         &(this->transformed_data_));
+                                        &(this->transformed_data_));
     }
     // clear memory
     if (has_sampled) {

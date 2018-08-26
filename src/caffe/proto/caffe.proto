@@ -763,6 +763,13 @@ message AnnotatedDataParameter {
   // If provided, it will replace the AnnotationType stored in each
   // AnnotatedDatum.
   optional AnnotatedDatum.AnnotationType anno_type = 3;
+  optional bool per_image_labels = 4 [default = false];
+  enum ConfLossType {
+    SOFTMAX = 0;
+    LOGISTIC = 1;
+  }
+  optional ConfLossType conf_loss_type = 5 [default = SOFTMAX];
+  optional int32 num_labels = 6 [default = 0];
 }
 
 message ArgMaxParameter {

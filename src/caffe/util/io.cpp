@@ -271,6 +271,8 @@ bool ReadXMLToAnnotatedDatum(const string& labelfile, const int img_height,
     height = img_height;
     width = img_width;
   }
+  int label = pt.get<int>("annotation.label",-1);
+  anno_datum->mutable_datum()->set_label(label);
   LOG_IF(WARNING, height != img_height) << labelfile <<
       " inconsistent image height.";
   LOG_IF(WARNING, width != img_width) << labelfile <<

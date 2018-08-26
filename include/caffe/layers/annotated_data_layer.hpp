@@ -13,6 +13,18 @@
 #include "caffe/proto/caffe.pb.h"
 #include "caffe/util/db.hpp"
 
+#include <map>
+#include <utility>
+#include <vector>
+
+#include "caffe/blob.hpp"
+#include "caffe/layer.hpp"
+#include "caffe/proto/caffe.pb.h"
+#include "caffe/util/bbox_util.hpp"
+
+#include "caffe/layers/loss_layer.hpp"
+
+
 namespace caffe {
 
 template <typename Dtype>
@@ -36,6 +48,8 @@ class AnnotatedDataLayer : public BasePrefetchingDataLayer<Dtype> {
   AnnotatedDatum_AnnotationType anno_type_;
   vector<BatchSampler> batch_samplers_;
   string label_map_file_;
+  ConfLossType label_loss_type_;
+  int num_labels_;
 };
 
 }  // namespace caffe

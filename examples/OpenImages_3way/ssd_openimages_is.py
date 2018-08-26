@@ -465,7 +465,7 @@ shutil.copy(train_net_file, job_dir)
 # Create test net.
 net = caffe.NetSpec()
 net.data, net.label = CreateAnnotatedDataLayer(test_data, batch_size=test_batch_size,
-        train=False, output_label=True, label_map_file=label_map_file,
+        image_level_loss=loss, train=False, output_label=True, label_map_file=label_map_file,
         transform_param=test_transform_param)
 
 VGGNetBody(net, from_layer='data', fully_conv=True, reduced=True, dilated=True,

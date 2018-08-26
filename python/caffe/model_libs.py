@@ -789,7 +789,7 @@ def InceptionV3Body(net, from_layer, output_pred=False, **bn_param):
 
   return net
 
-def CreateMultiBoxHead(net, data_layer="data", num_classes=[], from_layers=[],
+def CreateMultiBoxHead(net, data_layer="data", num_classes=[], num_attr=0, from_layers=[],
         use_objectness=False, normalizations=[], use_batchnorm=True, lr_mult=1,
         use_scale=True, min_sizes=[], max_sizes=[], prior_variance = [0.1],
         aspect_ratios=[], steps=[], img_height=0, img_width=0, share_location=True,
@@ -815,6 +815,7 @@ def CreateMultiBoxHead(net, data_layer="data", num_classes=[], from_layers=[],
     priorbox_layers = []
     loc_layers = []
     conf_layers = []
+    attr_conf_layers = []
     objectness_layers = []
     for i in range(0, num):
         from_layer = from_layers[i]
@@ -885,6 +886,18 @@ def CreateMultiBoxHead(net, data_layer="data", num_classes=[], from_layers=[],
         net[flatten_name] = L.Flatten(net[permute_name], axis=1)
         conf_layers.append(net[flatten_name])
 
+        # Create attribute confidence prediction layer.
+        if (num_attr > 0):
+            name = "{}_mbox_attr_conf{}".format(from_layer, conf_postfix)
+            num_conf_output = num_priors_per_location * num_attr;
+            ConvBNLayer(net, from_layer, name, use_bn=use_batchnorm, use_relu=False, lr_mult=lr_mult,
+                num_output=num_conf_output, kernel_size=kernel_size, pad=pad, stride=1, **bn_param)
+            permute_name = "{}_perm".format(name)
+            net[permute_name] = L.Permute(net[name], order=[0, 2, 3, 1])
+            flatten_name = "{}_flat".format(name)
+            net[flatten_name] = L.Flatten(net[permute_name], axis=1)
+            attr_conf_layers.append(net[flatten_name])
+
         # Create prior generation layer.
         name = "{}_mbox_priorbox".format(from_layer)
         net[name] = L.PriorBox(net[from_layer], net[data_layer], min_size=min_size,
@@ -929,5 +942,10 @@ def CreateMultiBoxHead(net, data_layer="data", num_classes=[], from_layers=[],
         name = "mbox_objectness"
         net[name] = L.Concat(*objectness_layers, axis=1)
         mbox_layers.append(net[name])
+    if num_attr > 0 :
+        name = "mbox_attr_conf"
+        net[name] = L.Concat(*attr_conf_layers, axis=1)
+        mbox_layers.append(net[name])
+    
 
     return mbox_layers

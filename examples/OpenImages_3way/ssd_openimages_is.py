@@ -263,7 +263,8 @@ pretrain_model = "models/VGGNet/VGG_ILSVRC_16_layers_fc_reduced.caffemodel"
 label_map_file = "data/OpenImages/OpenImages_is/labelmap_is.prototxt"
 
 # MultiBoxLoss parameters.
-num_classes = 43
+num_classes = 24
+num_attr = 6
 share_location = True
 background_label_id=0
 train_on_diff_gt = True
@@ -276,8 +277,10 @@ loc_weight = (neg_pos_ratio + 1.) / 4.
 multibox_loss_param = {
     'loc_loss_type': P.MultiBoxLoss.SMOOTH_L1,
     'conf_loss_type': P.MultiBoxLoss.SOFTMAX,
+    'attr_conf_loss_type': P.MultiBoxLoss.SOFTMAX,
     'loc_weight': loc_weight,
     'num_classes': num_classes,
+    'num_attr': num_attr,
     'share_location': share_location,
     'match_type': P.MultiBoxLoss.PER_PREDICTION,
     'overlap_threshold': 0.5,
@@ -329,13 +332,13 @@ clip = False
 
 # Solver parameters.
 # Defining which GPUs to use.
-gpus = "0"
+gpus = ""
 gpulist = gpus.split(",")
-num_gpus = len(gpulist)
+num_gpus = 0#len(gpulist)
 
 # Divide the mini-batch to different GPUs.
-batch_size = 24
-accum_batch_size = 48
+batch_size = 2
+accum_batch_size = 2
 iter_size = accum_batch_size / batch_size
 solver_mode = P.Solver.CPU
 device_id = 0
@@ -356,7 +359,7 @@ elif normalization_mode == P.Loss.FULL:
   base_lr *= 2000.
 
 # Evaluate on whole test set.
-num_test_image = 7012
+num_test_image = 7125
 test_batch_size = 8
 # Ideally test_batch_size should be divisible by num_test_image,
 # otherwise mAP will be slightly off the true value.
@@ -381,16 +384,17 @@ solver_param = {
     'debug_info': False,
     'snapshot_after_train': True,
     # Test parameters
-    'test_iter': [test_iter],
-    'test_interval': 5000,
-    'eval_type': "detection",
-    'ap_version': "11point",
-    'test_initialization': False,
+#    'test_iter': [test_iter],
+#    'test_interval': 5000,
+#    'eval_type': "detection",
+#    'ap_version': "11point",
+#    'test_initialization': False,
     }
 
 # parameters for generating detection output.
 det_out_param = {
     'num_classes': num_classes,
+    'num_attr': num_attr,
     'share_location': share_location,
     'background_label_id': background_label_id,
     'nms_param': {'nms_threshold': 0.45, 'top_k': 400},
@@ -440,15 +444,18 @@ AddExtraLayers(net, use_batchnorm, lr_mult=lr_mult)
 mbox_layers = CreateMultiBoxHead(net, data_layer='data', from_layers=mbox_source_layers,
         use_batchnorm=use_batchnorm, min_sizes=min_sizes, max_sizes=max_sizes,
         aspect_ratios=aspect_ratios, steps=steps, normalizations=normalizations,
-        num_classes=num_classes, share_location=share_location, flip=flip, clip=clip,
+        num_classes=num_classes, num_attr=num_attr, share_location=share_location, flip=flip, clip=clip,
         prior_variance=prior_variance, kernel_size=3, pad=1, lr_mult=lr_mult)
 
 # Create the MultiBoxLossLayer.
 name = "mbox_loss"
-mbox_layers.append(net.label)
+if num_attr > 0:
+        mbox_layers = mbox_layers[:-1] + [net.label] + [mbox_layers[-1]]
+else:
+        mbox_layers.append(net.label)
 net[name] = L.MultiBoxLoss(*mbox_layers, multibox_loss_param=multibox_loss_param,
         loss_param=loss_param, include=dict(phase=caffe_pb2.Phase.Value('TRAIN')),
-        propagate_down=[True, True, False, False])
+        propagate_down=[True, True, False, False, True])
 
 with open(train_net_file, 'w') as f:
     print('name: "{}_train"'.format(model_name), file=f)
@@ -469,7 +476,7 @@ AddExtraLayers(net, use_batchnorm, lr_mult=lr_mult)
 mbox_layers = CreateMultiBoxHead(net, data_layer='data', from_layers=mbox_source_layers,
         use_batchnorm=use_batchnorm, min_sizes=min_sizes, max_sizes=max_sizes,
         aspect_ratios=aspect_ratios, steps=steps, normalizations=normalizations,
-        num_classes=num_classes, share_location=share_location, flip=flip, clip=clip,
+        num_classes=num_classes, num_attr = num_attr,share_location=share_location, flip=flip, clip=clip,
         prior_variance=prior_variance, kernel_size=3, pad=1, lr_mult=lr_mult)
 
 conf_name = "mbox_conf"
@@ -485,6 +492,22 @@ elif multibox_loss_param["conf_loss_type"] == P.MultiBoxLoss.LOGISTIC:
   sigmoid_name = "{}_sigmoid".format(conf_name)
   net[sigmoid_name] = L.Sigmoid(net[conf_name])
   mbox_layers[1] = net[sigmoid_name]
+
+if num_attr > 0 :
+  conf_name = "mbox_attr_conf"
+  if multibox_loss_param["attr_conf_loss_type"] == P.MultiBoxLoss.SOFTMAX:
+    reshape_name = "{}_reshape".format(conf_name)
+    net[reshape_name] = L.Reshape(net[conf_name], shape=dict(dim=[0, -1, num_classes]))
+    softmax_name = "{}_softmax".format(conf_name)
+    net[softmax_name] = L.Softmax(net[reshape_name], axis=2)
+    flatten_name = "{}_flatten".format(conf_name)
+    net[flatten_name] = L.Flatten(net[softmax_name], axis=1)
+    mbox_layers[-1] = net[flatten_name]
+  elif multibox_loss_param["attr_conf_loss_type"] == P.MultiBoxLoss.LOGISTIC:
+    sigmoid_name = "{}_sigmoid".format(conf_name)
+    net[sigmoid_name] = L.Sigmoid(net[conf_name])
+    mbox_layers[-1] = net[sigmoid_name]
+
 
 net.detection_out = L.DetectionOutput(*mbox_layers,
     detection_output_param=det_out_param,
@@ -516,7 +539,7 @@ shutil.copy(deploy_net_file, job_dir)
 # Create solver.
 solver = caffe_pb2.SolverParameter(
         train_net=train_net_file,
-        test_net=[test_net_file],
+        #test_net=[test_net_file],
         snapshot_prefix=snapshot_prefix,
         **solver_param)
 

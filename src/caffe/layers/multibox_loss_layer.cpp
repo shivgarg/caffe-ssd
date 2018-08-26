@@ -191,9 +191,9 @@ void MultiBoxLossLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
   CHECK_EQ(num_priors_ * num_classes_, bottom[1]->channels())
       << "Number of priors must match number of confidence predictions.";
   if(num_attr_ > 0) {
-    CHECK_EQ(num_priors_ * num_classes_, bottom[2]->channels())
+    CHECK_EQ(num_priors_ * num_attr_, bottom[4]->channels())
       << "Number of priors must match number of attr confidence predictions.";
-    CHECK_EQ(bottom[0]->num(), bottom[2]->num());
+    CHECK_EQ(bottom[0]->num(), bottom[4]->num());
   }
   
 }
@@ -205,7 +205,7 @@ void MultiBoxLossLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
   const Dtype* conf_data = bottom[1]->cpu_data();
   const Dtype* prior_data = bottom[2]->cpu_data();
   const Dtype* gt_data = bottom[3]->cpu_data();
-  const Dtype* attr_conf_data;
+  const Dtype* attr_conf_data = NULL;
 
   if (num_attr_ > 0) {
     attr_conf_data = bottom[4]->cpu_data();
@@ -298,7 +298,7 @@ void MultiBoxLossLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     conf_loss_.mutable_cpu_data()[0] = 0;
   }
 
-  // Form data to pass on to conf_loss_layer_.
+  // Form data to pass on to attr_conf_loss_layer_.
   num_attr_conf_ = num_matches_;
   if (num_attr_ > 0 && num_attr_conf_ >= 1) {
     // Reshape the confidence data.
@@ -334,16 +334,19 @@ void MultiBoxLossLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
         normalization_, num_, num_priors_, num_matches_);
     top[0]->mutable_cpu_data()[0] +=
         loc_weight_ * loc_loss_.cpu_data()[0] / normalizer;
+    LOG(WARNING) << "loc loss "<< loc_weight_*loc_loss_.cpu_data()[0]/normalizer; 
   }
   if (this->layer_param_.propagate_down(1)) {
     Dtype normalizer = LossLayer<Dtype>::GetNormalizer(
         normalization_, num_, num_priors_, num_matches_);
     top[0]->mutable_cpu_data()[0] += conf_loss_.cpu_data()[0] / normalizer;
+    LOG(WARNING) << "Conf loss "<< conf_loss_.cpu_data()[0]/normalizer;
   }
   if (num_attr_ > 0 && this->layer_param_.propagate_down(4)) {
     Dtype normalizer = LossLayer<Dtype>::GetNormalizer(
         normalization_, num_, num_priors_, num_matches_);
     top[0]->mutable_cpu_data()[0] += attr_conf_loss_.cpu_data()[0] / normalizer;
+    LOG(WARNING) << "attr Conf loss "<< attr_conf_loss_.cpu_data()[0]/normalizer;
   }
 }
 
@@ -461,7 +464,7 @@ void MultiBoxLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 
 // Back propagate on attribute confidence prediction.
   if (num_attr_ > 0 && propagate_down[4]) {
-    Dtype* attr_conf_bottom_diff = bottom[1]->mutable_cpu_diff();
+    Dtype* attr_conf_bottom_diff = bottom[4]->mutable_cpu_diff();
     caffe_set(bottom[4]->count(), Dtype(0), attr_conf_bottom_diff);
     if (num_attr_conf_ >= 1) {
       vector<bool> attr_conf_propagate_down;

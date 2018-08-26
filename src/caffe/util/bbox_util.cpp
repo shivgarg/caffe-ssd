@@ -1057,7 +1057,7 @@ void GetGroundTruth(const Dtype* gt_data, const int num_gt,
       map<int, vector<NormalizedBBox> >* all_gt_bboxes) {
   all_gt_bboxes->clear();
   for (int i = 0; i < num_gt; ++i) {
-    int start_idx = i * 8;
+    int start_idx = i * 9;
     int item_id = gt_data[start_idx];
     if (item_id == -1) {
       continue;
@@ -1098,7 +1098,7 @@ void GetGroundTruth(const Dtype* gt_data, const int num_gt,
       map<int, LabelBBox>* all_gt_bboxes) {
   all_gt_bboxes->clear();
   for (int i = 0; i < num_gt; ++i) {
-    int start_idx = i * 8;
+    int start_idx = i * 9;
     int item_id = gt_data[start_idx];
     if (item_id == -1) {
       break;
@@ -1665,7 +1665,7 @@ void EncodeAttrConfPrediction(const Dtype* attr_conf_data, const int num,
   // Retrieve parameters.
   CHECK(multibox_loss_param.has_num_attr()) << "Must provide num_attr.";
   const int num_attr = multibox_loss_param.num_attr();
-  CHECK_GE(num_attr, 1) << "num_classes should not be less than 1.";
+  CHECK_GE(num_attr, 1) << "num_attr should not be less than 1.";
   const int background_label_id = multibox_loss_param.background_label_id();
   
   const ConfLossType attr_conf_loss_type = multibox_loss_param.attr_conf_loss_type();
@@ -1685,10 +1685,10 @@ void EncodeAttrConfPrediction(const Dtype* attr_conf_data, const int num,
           const int gt_label = all_gt_bboxes.find(i)->second[match_index[j]].attr();
           switch (attr_conf_loss_type) {
             case MultiBoxLossParameter_ConfLossType_SOFTMAX:
-              attr_conf_gt_data[j] = gt_label;
+              attr_conf_gt_data[count] = gt_label;
               break;
             case MultiBoxLossParameter_ConfLossType_LOGISTIC:
-              attr_conf_gt_data[j * num_attr + gt_label] = 1;
+              attr_conf_gt_data[count * num_attr + gt_label] = 1;
               break;
             default:
               LOG(FATAL) << "Unknown conf loss type.";

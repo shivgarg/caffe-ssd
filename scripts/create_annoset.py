@@ -128,7 +128,7 @@ if __name__ == "__main__":
         " --label_type={}" \
         " --label_map_file={}" \
         " --check_label={}" \
-        " --bbox_multi_label ={}" \
+        " --bbox_multi_label={}" \
         " --min_dim={}" \
         " --max_dim={}" \
         " --resize_height={}" \

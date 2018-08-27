@@ -263,7 +263,7 @@ pretrain_model = "models/VGGNet/VGG_ILSVRC_16_layers_fc_reduced.caffemodel"
 label_map_file = "data/OpenImages/OpenImages_region/labelmap_region.prototxt"
 
 # MultiBoxLoss parameters.
-num_classes = 10
+num_classes = 2
 share_location = True
 background_label_id=0
 train_on_diff_gt = True
@@ -334,8 +334,8 @@ gpulist = gpus.split(",")
 num_gpus = len(gpulist)
 
 # Divide the mini-batch to different GPUs.
-batch_size = 24
-accum_batch_size = 48
+batch_size = 64
+accum_batch_size = 64
 iter_size = accum_batch_size / batch_size
 solver_mode = P.Solver.CPU
 device_id = 0
@@ -381,16 +381,17 @@ solver_param = {
     'debug_info': False,
     'snapshot_after_train': True,
     # Test parameters
-    'test_iter': [test_iter],
-    'test_interval': 5000,
-    'eval_type': "detection",
-    'ap_version': "11point",
-    'test_initialization': False,
+#    'test_iter': [test_iter],
+#    'test_interval': 5000,
+#    'eval_type': "detection",
+#    'ap_version': "11point",
+#    'test_initialization': False,
     }
 
 # parameters for generating detection output.
 det_out_param = {
     'num_classes': num_classes,
+    'num_attr': 0,
     'share_location': share_location,
     'background_label_id': background_label_id,
     'nms_param': {'nms_threshold': 0.45, 'top_k': 400},
@@ -516,7 +517,7 @@ shutil.copy(deploy_net_file, job_dir)
 # Create solver.
 solver = caffe_pb2.SolverParameter(
         train_net=train_net_file,
-        test_net=[test_net_file],
+#        test_net=[test_net_file],
         snapshot_prefix=snapshot_prefix,
         **solver_param)
 

@@ -210,7 +210,7 @@ def CreateAnnotatedDataLayer(source, batch_size=32, backend=P.Data.LMDB,output_l
     annotated_data_param = {
         'label_map_file': label_map_file,
         'batch_sampler': batch_sampler,
-        'image_label_loss': image_label_loss,
+        'conf_loss_type': image_label_loss,
         }
     if per_image_label:
         annotated_data_param['per_image_labels'] = True

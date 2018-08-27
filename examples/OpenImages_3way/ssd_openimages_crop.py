@@ -383,12 +383,13 @@ solver_param = {
     'device_id': device_id,
     'debug_info': False,
     'snapshot_after_train': True,
+    'regularization_type': "L2",
     # Test parameters
-    'test_iter': [test_iter],
-    'test_interval': 5000,
-    'eval_type': "detection",
-    'ap_version': "11point",
-    'test_initialization': False,
+    #'test_iter': [test_iter],
+    #'test_interval': 5000,
+    #'eval_type': "detection",
+    #'ap_version': "11point",
+    #'test_initialization': False,
     }
 
 # parameters for generating detection output.
@@ -429,11 +430,19 @@ make_if_not_exist(save_dir)
 make_if_not_exist(job_dir)
 make_if_not_exist(snapshot_dir)
 
+kwargs = {
+        'param': [
+            dict(lr_mult=lr_mult, decay_mult=1),
+            dict(lr_mult=2 * lr_mult, decay_mult=0)],
+        'weight_filler': dict(type='xavier'),
+        'bias_filler': dict(type='constant', value=0)
+}
+
 # Create train net.
 net = caffe.NetSpec()
-net.data, net.label = CreateAnnotatedDataLayer(train_data, batch_size=batch_size_per_device,
-        image_label_loss=image_label_loss ,train=True, output_label=True, label_map_file=label_map_file,
-        per_image_label=True, transform_param=train_transform_param, batch_sampler=batch_sampler)
+net.data, net.label, net.label_sup = CreateAnnotatedDataLayer(train_data, batch_size=batch_size_per_device,
+        train=True, output_label=True, label_map_file=label_map_file,per_image_label=True, 
+        image_label_loss=image_label_loss ,transform_param=train_transform_param, batch_sampler=batch_sampler)
 
 VGGNetBody(net, from_layer='data', fully_conv=True, reduced=True, dilated=True,
     dropout=False)
@@ -441,8 +450,8 @@ VGGNetBody(net, from_layer='data', fully_conv=True, reduced=True, dilated=True,
 AddExtraLayers(net, use_batchnorm, lr_mult=lr_mult)
 
 net.global_pool1 = L.Pooling(net[net.keys()[-1]], pool=P.Pooling.MAX, global_pooling=True)
-net.inner_product1 = L.InnerProduct(net.global_pool1, num_output=num_image_labels)
-
+net.inner_product1 = L.InnerProduct(net.global_pool1, num_output=num_image_labels,**kwargs)
+net.inner_product1_relu = L.ReLU(net.inner_product1,in_place=True)
 
 mbox_layers = CreateMultiBoxHead(net, data_layer='data', from_layers=mbox_source_layers,
         use_batchnorm=use_batchnorm, min_sizes=min_sizes, max_sizes=max_sizes,
@@ -457,6 +466,11 @@ net[name] = L.MultiBoxLoss(*mbox_layers, multibox_loss_param=multibox_loss_param
         loss_param=loss_param, include=dict(phase=caffe_pb2.Phase.Value('TRAIN')),
         propagate_down=[True, True, False, False])
 
+if image_label_loss == P.AnnotatedData.SOFTMAX:
+  net.image_loss = L.SoftmaxWithLoss(net.inner_product1,net.label_sup)
+elif image_label_loss == P.AnnotatedData.LOGISTIC:
+  net.image_loss = L.SigmoidCrossEntropyLoss(net.inner_product1,net.label_sup)
+
 with open(train_net_file, 'w') as f:
     print('name: "{}_train"'.format(model_name), file=f)
     print(net.to_proto(), file=f)
@@ -464,14 +478,18 @@ shutil.copy(train_net_file, job_dir)
 
 # Create test net.
 net = caffe.NetSpec()
-net.data, net.label = CreateAnnotatedDataLayer(test_data, batch_size=test_batch_size,
-        image_label_loss=image_label_loss, train=False, output_label=True, label_map_file=label_map_file,
-        per_image_label=True, transform_param=test_transform_param)
+net.data, net.label , net.label_sup = CreateAnnotatedDataLayer(test_data, batch_size=test_batch_size,
+        train=False, output_label=True, label_map_file=label_map_file, per_image_label=True,
+        image_label_loss=image_label_loss, transform_param=test_transform_param)
 
 VGGNetBody(net, from_layer='data', fully_conv=True, reduced=True, dilated=True,
     dropout=False)
 
 AddExtraLayers(net, use_batchnorm, lr_mult=lr_mult)
+
+net.global_pool1 = L.Pooling(net[net.keys()[-1]], pool=P.Pooling.MAX, global_pooling=True)
+net.inner_product1 = L.InnerProduct(net.global_pool1, num_output=num_image_labels)
+net.inner_product1_relu = L.ReLU(net.inner_product1,in_place=True)
 
 mbox_layers = CreateMultiBoxHead(net, data_layer='data', from_layers=mbox_source_layers,
         use_batchnorm=use_batchnorm, min_sizes=min_sizes, max_sizes=max_sizes,
@@ -492,6 +510,11 @@ elif multibox_loss_param["conf_loss_type"] == P.MultiBoxLoss.LOGISTIC:
   sigmoid_name = "{}_sigmoid".format(conf_name)
   net[sigmoid_name] = L.Sigmoid(net[conf_name])
   mbox_layers[1] = net[sigmoid_name]
+
+if image_label_loss == P.AnnotatedData.SOFTMAX:
+  net.image_labels = L.Softmax(net.inner_product1)
+elif image_label_loss == P.AnnotatedData.LOGISTIC:
+  net_image_labels = L.Sigmoid(net.inner_product1)
 
 net.detection_out = L.DetectionOutput(*mbox_layers,
     detection_output_param=det_out_param,
@@ -523,7 +546,7 @@ shutil.copy(deploy_net_file, job_dir)
 # Create solver.
 solver = caffe_pb2.SolverParameter(
         train_net=train_net_file,
-        test_net=[test_net_file],
+        #test_net=[test_net_file],
         snapshot_prefix=snapshot_prefix,
         **solver_param)
 

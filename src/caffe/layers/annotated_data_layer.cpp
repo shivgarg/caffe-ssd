@@ -154,7 +154,7 @@ void AnnotatedDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   Dtype* top_label = NULL;  // suppress warnings about uninitialized variables
   if (this->output_labels_ && anno_data_param.per_image_labels() ) {
     top_label = batch->label_sup_.mutable_cpu_data();
-    caffe_set(batch->label_sup_.count(), 0, top_label);
+    caffe_set<Dtype>(batch->label_sup_.count(), 0, top_label);
   }
 
   // Store transformed annotation.
@@ -235,7 +235,7 @@ void AnnotatedDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
           CHECK(sampled_datum->datum().has_label()) << "Cannot find any label.";
           if (label_loss_type_ == AnnotatedDataParameter_ConfLossType_SOFTMAX) {
             top_label[item_id] = sampled_datum->datum().label();
-          } else if (label_loss_type_ == AnnotatedDataParameter_ConfLossType_LOGISITC) {
+          } else if (label_loss_type_ == AnnotatedDataParameter_ConfLossType_LOGISTIC) {
             top_label[item_id*num_labels_+sampled_datum->datum().label()] = 1;
           }
         }

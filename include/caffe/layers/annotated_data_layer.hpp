@@ -13,19 +13,9 @@
 #include "caffe/proto/caffe.pb.h"
 #include "caffe/util/db.hpp"
 
-#include <map>
-#include <utility>
-#include <vector>
-
-#include "caffe/blob.hpp"
-#include "caffe/layer.hpp"
-#include "caffe/proto/caffe.pb.h"
-#include "caffe/util/bbox_util.hpp"
-
-#include "caffe/layers/loss_layer.hpp"
-
-
 namespace caffe {
+
+typedef AnnotatedDataParameter_ConfLossType ConfLossType;
 
 template <typename Dtype>
 class AnnotatedDataLayer : public BasePrefetchingDataLayer<Dtype> {

@@ -64,10 +64,12 @@ class CaffeDetection:
         '''
         # set net to batch size of 1
         # image_resize = 300
-        self.net.blobs['data'].reshape(1, 3, self.image_resize, self.image_resize)
-        image = caffe.io.load_image(image_file)
-
+        if type(image_file) == str:
+            image = caffe.io.load_image(image_file)
+        else:
+            image = image_file
         #Run the net and examine the top_k results
+        self.net.blobs['data'].reshape(1, 3, self.image_resize, self.image_resize)
         transformed_image = self.transformer.preprocess('data', image)
         self.net.blobs['data'].data[...] = transformed_image
 
@@ -107,13 +109,20 @@ class CaffeDetection:
 
 def main(args):
     '''main '''
-    detection = CaffeDetection(args.gpu_id,
-                               args.model_def, args.model_weights,
-                               args.image_resize, args.labelmap_file)
+    region = CaffeDetection(args.gpu_id,
+                               args.proto_region, args.model_region,
+                               args.image_resize, args.labelmap_region)
+    crop = CaffeDetection(args.gpu_id, args.proto_crop,
+                            args.model_crop,args.image_resize,args.labelmap_crop)
+    
+    relationship_triplet = open(args.relationship_file)
+    relationship_triplet = [line for line in relationship_triplet]
 
+    output = open(args.output_file,'w')
+    output.write('ImageID,Label1,Label2,Relationship,Confidence,xmin1,xmax1,ymin1,ymax1,xmin2,xmax2,ymin2,ymax2')
     for _,_,files in os.walk(args.image_dir):
         for f in files:
-            result = detection.detect(args.image_dir+'/'+f)
+            result = region.detect(args.image_dir+'/'+f)
             
             img = Image.open(args.image_file)
             width, height = img.size
@@ -124,21 +133,61 @@ def main(args):
                 xmax = int(round(item[2] * width))
                 ymax = int(round(item[3] * height))
                 
+                cropped_img = np.array(img.crop((xmin,ymin,xmax,ymax)))
+                result1 = crop.detect(cropped_img,topn=2)
+                width_crop = xmax-xmin
+                height_crop = ymax-ymin
+                score = item[5]
+                if len(result1) < 2:
+                    continue
+                xmin1 = int(round(result1[0][0]*width_crop)) + xmin
+                xmax1 = int(round(result1[0][2]*width_crop)) + xmin
+                ymin1 = int(round(result1[0][1]*height_crop)) + ymin
+                ymax1 = int(round(result1[0][3]*height_crop)) + ymin
+                
+                xmin2 = int(round(result1[1][0]*width_crop)) + xmin
+                xmax2 = int(round(result1[1][2]*width_crop)) + xmin
+                ymin2 = int(round(result1[1][1]*height_crop)) + ymin
+                ymax2 = int(round(result1[1][3]*height_crop)) + ymin
+                
+                score = item[5]*result1[0][5]*result1[1][5]
+                
+                relationship = item[6]
+                label1 = result1[0][6]
+                label2 = result1[1][6]
+                triplet = ','.join([label1,label2,relationship])
+                if triplet in relationship_triplet:
+                    lis = [f, label1, label2, relationship, score, xmin1, xmax1, ymin1, ymax1, xmin2, xmax2, ymin2, ymax2]
+                triplet = ','.join([label2,label1,relationship])
+                if triplet in relationship_triplet:
+                    lis = [f, label2, label1, relationship, score, xmin1, xmax1, ymin1, ymax1, xmin2, xmax2, ymin2, ymax2]
+                output.write(','.join([str(x) for x in lis])+'\n')
+    output.close()            
                 
 
 def parse_args():
     '''parse args'''
     parser = argparse.ArgumentParser()
     parser.add_argument('--gpu_id', type=int, default=0, help='gpu id')
-    parser.add_argument('--labelmap_file',
+    parser.add_argument('--labelmap_region',
                         default='data/VOC0712/labelmap_voc.prototxt')
-    parser.add_argument('--model_def',
+    parser.add_argument('--labelmap_crop',
+                        default='data/VOC0712/labelmap_voc.prototxt')
+    parser.add_argument('--proto_region',
+                        default='models/VGGNet/VOC0712/SSD_300x300/deploy.prototxt')
+    parser.add_argument('--proto_crop',
                         default='models/VGGNet/VOC0712/SSD_300x300/deploy.prototxt')
     parser.add_argument('--image_resize', default=300, type=int)
-    parser.add_argument('--model_weights',
-                        default='models/VGGNet/VOC0712/SSD_300x300/'
+    parser.add_argument('--model_region',
+                        default='modelsVGGNet/VOC0712/SSD_300x300/'
                         'VGG_VOC0712_SSD_300x300_iter_120000.caffemodel')
-    parser.add_argument('--image_dir', default='examples/images/fish-bike.jpg')
+    parser.add_argument('--model_crop',
+                        default='modelsVGGNet/VOC0712/SSD_300x300/'
+                        'VGG_VOC0712_SSD_300x300_iter_120000.caffemodel')
+
+    parser.add_argument('--image_dir')
+    parser.add_argument('--output_file')
+    parser.add_argument('--relationship_file')
     return parser.parse_args()
 
 if __name__ == '__main__':

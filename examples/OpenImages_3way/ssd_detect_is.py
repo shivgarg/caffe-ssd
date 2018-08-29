@@ -58,7 +58,7 @@ class CaffeDetection:
         self.labelmap = caffe_pb2.LabelMap()
         text_format.Merge(str(file.read()), self.labelmap)
 
-    def detect(self, image_file, conf_thresh=0.5, topn=5):
+    def detect(self, image_file, conf_thresh=0.2, topn=500):
         '''
         SSD detection
         '''
@@ -115,7 +115,7 @@ def main(args):
     for _,_,files in os.walk(args.image_dir):
         for f in files:
             result = detection.detect(args.image_dir+'/'+f)
-            
+            print len(result)
             img = Image.open(args.image_dir+'/'+f)
             width, height = img.size
             

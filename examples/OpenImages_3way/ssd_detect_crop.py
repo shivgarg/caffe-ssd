@@ -116,15 +116,15 @@ def main(args):
                             args.model_crop,args.image_resize,args.labelmap_crop)
     
     relationship_triplet = open(args.relationship_file)
-    relationship_triplet = [line for line in relationship_triplet]
-
+    relationship_triplet = [line.strip('\n') for line in relationship_triplet]
+    print relationship_triplet
     output = open(args.output_file,'w')
-    output.write('ImageID,Label1,Label2,Relationship,Confidence,xmin1,xmax1,ymin1,ymax1,xmin2,xmax2,ymin2,ymax2')
+    output.write('ImageID,Label1,Label2,Relationship,Confidence,xmin1,xmax1,ymin1,ymax1,xmin2,xmax2,ymin2,ymax2\n')
     for _,_,files in os.walk(args.image_dir):
         for f in files:
-            result = region.detect(args.image_dir+'/'+f)
-            
-            img = Image.open(args.image_file)
+            result = region.detect(args.image_dir+'/'+f,conf_thresh=0.2)
+            print "region ", len(result), f
+            img = Image.open(args.image_dir+'/'+f)
             width, height = img.size
             
             for item in result:
@@ -133,35 +133,61 @@ def main(args):
                 xmax = int(round(item[2] * width))
                 ymax = int(round(item[3] * height))
                 
-                cropped_img = np.array(img.crop((xmin,ymin,xmax,ymax)))
-                result1 = crop.detect(cropped_img,topn=2)
+                img.crop((xmin,ymin,xmax,ymax)).save('tmp.jpg')
+                result1 = crop.detect('tmp.jpg',topn=20,conf_thresh=0)
+                print "crop ",len(result1)
                 width_crop = xmax-xmin
                 height_crop = ymax-ymin
                 score = item[5]
                 if len(result1) < 2:
                     continue
-                xmin1 = int(round(result1[0][0]*width_crop)) + xmin
-                xmax1 = int(round(result1[0][2]*width_crop)) + xmin
-                ymin1 = int(round(result1[0][1]*height_crop)) + ymin
-                ymax1 = int(round(result1[0][3]*height_crop)) + ymin
-                
-                xmin2 = int(round(result1[1][0]*width_crop)) + xmin
-                xmax2 = int(round(result1[1][2]*width_crop)) + xmin
-                ymin2 = int(round(result1[1][1]*height_crop)) + ymin
-                ymax2 = int(round(result1[1][3]*height_crop)) + ymin
-                
-                score = item[5]*result1[0][5]*result1[1][5]
-                
-                relationship = item[6]
-                label1 = result1[0][6]
-                label2 = result1[1][6]
-                triplet = ','.join([label1,label2,relationship])
-                if triplet in relationship_triplet:
-                    lis = [f, label1, label2, relationship, score, xmin1, xmax1, ymin1, ymax1, xmin2, xmax2, ymin2, ymax2]
-                triplet = ','.join([label2,label1,relationship])
-                if triplet in relationship_triplet:
-                    lis = [f, label2, label1, relationship, score, xmin1, xmax1, ymin1, ymax1, xmin2, xmax2, ymin2, ymax2]
-                output.write(','.join([str(x) for x in lis])+'\n')
+                pairs = []
+                i = 0
+                for it in result1:
+                    pairs.append([i,it[6],it[5]])
+                    i+=1
+                triples = []
+                num_pairs = len(pairs)
+                for i in xrange(num_pairs):
+                    for j in xrange(i+1,num_pairs):
+                        if pairs[i][1] == pairs[j][1]:
+                            continue
+                        else:
+                            triples.append([pairs[i][0],pairs[j][0],pairs[i][2]*pairs[j][2]])
+                sorted_triples = sorted(triples, key= lambda triple: triple[2], reverse=True)
+                for triple in sorted_triples:
+                    ind1 = triple[0]
+                    ind2 = triple[1]
+                    xmin1 = int(round(result1[ind1][0]*width_crop)) + xmin
+                    xmax1 = int(round(result1[ind1][2]*width_crop)) + xmin
+                    ymin1 = int(round(result1[ind1][1]*height_crop)) + ymin
+                    ymax1 = int(round(result1[ind1][3]*height_crop)) + ymin
+                    
+                    xmin2 = int(round(result1[ind2][0]*width_crop)) + xmin
+                    xmax2 = int(round(result1[ind2][2]*width_crop)) + xmin
+                    ymin2 = int(round(result1[ind2][1]*height_crop)) + ymin
+                    ymax2 = int(round(result1[ind2][3]*height_crop)) + ymin
+                    
+                    score = item[5]*triple[2]
+                    
+                    relationship = item[6]
+                    label1 = result1[ind1][6]
+                    label2 = result1[ind2][6]
+                    triplet = ','.join([label1,label2,relationship])
+                    print triplet
+                    lis = []
+                    if triplet in relationship_triplet:
+                        print "triplet found"
+                        lis = [f, label1, label2, relationship, score, xmin1, xmax1, ymin1, ymax1, xmin2, xmax2, ymin2, ymax2]
+                        output.write(','.join([str(x) for x in lis])+'\n')
+                        break
+                    triplet = ','.join([label2,label1,relationship])
+                    if triplet in relationship_triplet:
+                        print "triplet found"
+                        lis = [f, label2, label1, relationship, score, xmin2, xmax2, ymin2, ymax2, xmin1, xmax1, ymin1, ymax1]
+                        output.write(','.join([str(x) for x in lis])+'\n')
+                        break
+                    
     output.close()            
                 
 

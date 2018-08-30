@@ -155,7 +155,6 @@ void DetectionOutputLayer<Dtype>::Forward_gpu(
   int count = 0;
   boost::filesystem::path output_directory(output_directory_);
   for (int i = 0; i < num; ++i) {
-    vector<pair<int, float> >& attr_class = all_attr_class[i];
     const int conf_idx = i * num_classes_ * num_priors_;
     int bbox_idx;
     if (share_location_) {
@@ -186,8 +185,10 @@ void DetectionOutputLayer<Dtype>::Forward_gpu(
         for (int k = 0; k < 4; ++k) {
           top_data[count * 9 + 3 + k] = cur_bbox_data[idx * 4 + k];
         }
-        top_data[count * 9 + 7] = attr_class[idx].first;
-        top_data[count * 9 + 8] = attr_class[idx].second;
+        if (num_attr_ > 0) {
+          top_data[count * 9 + 7] = all_attr_class[i][idx].first;
+          top_data[count * 9 + 8] = all_attr_class[i][idx].second;
+        }
         
         if (need_save_) {
           // Generate output bbox.

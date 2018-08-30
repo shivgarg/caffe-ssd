@@ -341,7 +341,6 @@ void DetectionOutputLayer<Dtype>::Forward_cpu(
   boost::filesystem::path output_directory(output_directory_);
   for (int i = 0; i < num; ++i) {
     const map<int, vector<float> >& conf_scores = all_conf_scores[i];
-    const vector<pair<int, float> >& attr_class = all_attr_class[i];
     const LabelBBox& decode_bboxes = all_decode_bboxes[i];
     for (map<int, vector<int> >::iterator it = all_indices[i].begin();
          it != all_indices[i].end(); ++it) {
@@ -376,8 +375,10 @@ void DetectionOutputLayer<Dtype>::Forward_cpu(
         top_data[count * 9 + 4] = bbox.ymin();
         top_data[count * 9 + 5] = bbox.xmax();
         top_data[count * 9 + 6] = bbox.ymax();
-        top_data[count * 9 + 7] = attr_class[idx].first;
-        top_data[count * 9 + 8] = attr_class[idx].second;
+        if (num_attr_ > 0) {
+          top_data[count * 9 + 7] = all_attr_class[i][idx].first;
+          top_data[count * 9 + 8] = all_attr_class[i][idx].second;
+        }
         if (need_save_) {
           NormalizedBBox out_bbox;
           OutputBBox(bbox, sizes_[name_count_], has_resize_, resize_param_,

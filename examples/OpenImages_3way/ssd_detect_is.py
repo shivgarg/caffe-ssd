@@ -59,7 +59,7 @@ class CaffeDetection:
         self.labelmap = caffe_pb2.LabelMap()
         text_format.Merge(str(file.read()), self.labelmap)
 
-    def detect(self, image_file, conf_thresh=0.2, topn=500):
+    def detect(self, image_file, conf_thresh=0.1, topn=500):
         '''
         SSD detection
         '''
@@ -106,7 +106,9 @@ class CaffeDetection:
             score = top_conf[i]
             label = int(top_label_indices[i])
             label_name = top_labels[i]
-            result.append([xmin, ymin, xmax, ymax, label, score, label_name, top_attr_conf[i], objs[top_attr_label[i]]])
+            result.append([xmin, ymin, xmax, ymax, label, score, label_name, top_attr_conf[i], objs[str(int(top_attr_label[i]))]])
+            if top_attr_label[i] > 6 and math.ceil(top_attr_label[i]) != math.floor(top_attr_label[i]):
+                print "WARNING"
         return result
 
 def main(args):

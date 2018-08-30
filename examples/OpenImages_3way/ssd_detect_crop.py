@@ -59,7 +59,7 @@ class CaffeDetection:
         self.labelmap = caffe_pb2.LabelMap()
         text_format.Merge(str(file.read()), self.labelmap)
 
-    def detect(self, image_file, conf_thresh=0.5, topn=5):
+    def detect(self, image_file, conf_thresh=0.5, topn=5,prob=False):
         '''
         SSD detection
         '''
@@ -75,9 +75,11 @@ class CaffeDetection:
         self.net.blobs['data'].data[...] = transformed_image
 
         # Forward pass.
-        forward = self.net.forward()['detection_out']
-        detection = forward['detection_out']
-        probability = forward['image_labels']
+        forward = self.net.forward()
+        detections =forward['detection_out']
+        probability =[]
+        if prob:
+            probability= forward['image_labels']
         # Parse the outputs.
         det_label = detections[0,0,:,1]
         det_conf = detections[0,0,:,2]
@@ -107,7 +109,9 @@ class CaffeDetection:
             label = int(top_label_indices[i])
             label_name = top_labels[i]
             result.append([xmin, ymin, xmax, ymax, label, score, label_name])
-        return result, probability
+        if prob:
+            return result, probability
+        return result
 
 def main(args):
     '''main '''
@@ -119,12 +123,12 @@ def main(args):
     
     relationship_triplet = open(args.relationship_file)
     relationship_triplet = [line.strip('\n') for line in relationship_triplet]
-    print relationship_triplet
+    #print relationship_triplet
     output = open(args.output_file,'w')
     output.write('ImageID,Label1,Label2,Relationship,Confidence,xmin1,xmax1,ymin1,ymax1,xmin2,xmax2,ymin2,ymax2\n')
     for _,_,files in os.walk(args.image_dir):
         for f in files:
-            result = region.detect(args.image_dir+'/'+f,conf_thresh=0.2)
+            result = region.detect(args.image_dir+'/'+f,conf_thresh=0.3)
             print "region ", len(result), f
             img = Image.open(args.image_dir+'/'+f)
             width, height = img.size
@@ -136,7 +140,11 @@ def main(args):
                 ymax = int(round(item[3] * height))
                 
                 img.crop((xmin,ymin,xmax,ymax)).save('tmp.jpg')
-                result1, probability = crop.detect('tmp.jpg',topn=20,conf_thresh=0)
+                result1, probability = crop.detect('tmp.jpg',topn=20,conf_thresh=0,prob=True)
+                relationship = objs[str(np.argmax(probability))]
+                probability = np.max(probability)
+                print relationship
+                print probability
                 print "crop ",len(result1)
                 width_crop = xmax-xmin
                 height_crop = ymax-ymin
@@ -152,7 +160,7 @@ def main(args):
                 num_pairs = len(pairs)
                 for i in xrange(num_pairs):
                     for j in xrange(i+1,num_pairs):
-                        if pairs[i][2] == pairs[j][2]:
+                        if pairs[i][1] == pairs[j][1]:
                             continue
                         else:
                             triples.append([pairs[i][0],pairs[j][0],pairs[i][2]*pairs[j][2]])
@@ -172,7 +180,6 @@ def main(args):
                     
                     score = item[5]*triple[2]
                     
-                    relationship = item[6]
                     label1 = result1[ind1][6]
                     label2 = result1[ind2][6]
                     triplet = ','.join([label1,label2,relationship])

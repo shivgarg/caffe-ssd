@@ -278,10 +278,14 @@ void DetectionOutputLayer<Dtype>::Forward_gpu(
             if (c == background_label_id_) {
               continue;
             }
-            string label_name = label_to_name_[c];
+            string label_name = label_to_name_[c]; 
+            if (outfiles.find(label_name) == outfiles.end()) {
+              continue;
+            }
             outfiles[label_name]->flush();
             outfiles[label_name]->close();
             delete outfiles[label_name];
+            outfiles.erase(label_name);
           }
         } else if (output_format_ == "COCO") {
           boost::filesystem::path output_directory(output_directory_);

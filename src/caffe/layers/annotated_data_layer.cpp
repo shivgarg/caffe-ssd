@@ -107,15 +107,19 @@ void AnnotatedDataLayer<Dtype>::DataLayerSetUp(
     if (anno_data_param.per_image_labels()) {
       num_labels_ = anno_data_param.num_labels();
       label_loss_type_ = anno_data_param.conf_loss_type();
+      label_shape.resize(2);
       if (label_loss_type_ == AnnotatedDataParameter_ConfLossType_SOFTMAX) {
-        label_shape.resize(1);
         label_shape[0] = batch_size;
+        label_shape[1] = 1;
       } else if (label_loss_type_ == AnnotatedDataParameter_ConfLossType_LOGISTIC) {
-        label_shape.resize(2);
         label_shape[0] = batch_size;
         label_shape[1] = num_labels_;
       }
       top[2]->Reshape(label_shape);
+      LOG(INFO) << "output data size: " << top[2]->num() << ","
+      << top[2]->channels() << "," << top[2]->height() << ","
+      << top[2]->width();
+
       for (int i = 0; i < this->PREFETCH_COUNT; ++i) {
         this->prefetch_[i].label_sup_.Reshape(label_shape);
       }
@@ -151,10 +155,11 @@ void AnnotatedDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   batch->data_.Reshape(top_shape);
 
   Dtype* top_data = batch->data_.mutable_cpu_data();
+  Dtype* top_label_sup = NULL;
   Dtype* top_label = NULL;  // suppress warnings about uninitialized variables
   if (this->output_labels_ && anno_data_param.per_image_labels() ) {
-    top_label = batch->label_sup_.mutable_cpu_data();
-    caffe_set<Dtype>(batch->label_sup_.count(), 0, top_label);
+    top_label_sup = batch->label_sup_.mutable_cpu_data();
+    //caffe_set<Dtype>(batch->label_sup_.count(), 0, top_label);
   }
 
   // Store transformed annotation.
@@ -234,9 +239,10 @@ void AnnotatedDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
         if (anno_data_param.per_image_labels()) {
           CHECK(sampled_datum->datum().has_label()) << "Cannot find any label.";
           if (label_loss_type_ == AnnotatedDataParameter_ConfLossType_SOFTMAX) {
-            top_label[item_id] = sampled_datum->datum().label();
+            top_label_sup[item_id] = sampled_datum->datum().label();
+            //LOG(WARNING) << "annotation label " <<top_label_sup[item_id];
           } else if (label_loss_type_ == AnnotatedDataParameter_ConfLossType_LOGISTIC) {
-            top_label[item_id*num_labels_+sampled_datum->datum().label()] = 1;
+            top_label_sup[item_id*num_labels_+sampled_datum->datum().label()] = 1;
           }
         }
         // Make sure all data have same annotation type.
@@ -266,7 +272,7 @@ void AnnotatedDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
                                           &(this->transformed_data_));
         // Otherwise, store the label from datum.
         CHECK(sampled_datum->datum().has_label()) << "Cannot find any label.";
-        top_label[item_id] = sampled_datum->datum().label();
+        top_label_sup[item_id] = sampled_datum->datum().label();
       }
     } else {
       this->data_transformer_->Transform(sampled_datum->datum(),

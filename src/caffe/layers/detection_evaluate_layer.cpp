@@ -52,11 +52,12 @@ void DetectionEvaluateLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
   CHECK_LE(count_, sizes_.size());
   CHECK_EQ(bottom[0]->num(), 1);
   CHECK_EQ(bottom[0]->channels(), 1);
-  CHECK_EQ(bottom[0]->width(), 7);
+  CHECK_EQ(bottom[0]->width(), 9);
   CHECK_EQ(bottom[1]->num(), 1);
   CHECK_EQ(bottom[1]->channels(), 1);
-  CHECK_EQ(bottom[1]->width(), 8);
+  CHECK_EQ(bottom[1]->width(), 9);
 
+  int width = bottom[0]->width();
   // num() and channels() are 1.
   vector<int> top_shape(2, 1);
   int num_pos_classes = background_label_id_ == -1 ?
@@ -67,7 +68,7 @@ void DetectionEvaluateLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
     if (det_data[1] != -1) {
       ++num_valid_det;
     }
-    det_data += 7;
+    det_data += width;
   }
   top_shape.push_back(num_pos_classes + num_valid_det);
   // Each row is a 5 dimension vector, which stores

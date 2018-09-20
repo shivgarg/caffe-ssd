@@ -437,8 +437,11 @@ void Solver<Dtype>::TestDetection(const int test_net_id) {
   map<int, map<int, vector<pair<float, int> > > > all_true_pos;
   map<int, map<int, vector<pair<float, int> > > > all_false_pos;
   map<int, map<int, int> > all_num_pos;
+  float top_1 = 0.0;
+  float top_5 = 0.0;
   const shared_ptr<Net<Dtype> >& test_net = test_nets_[test_net_id];
   Dtype loss = 0;
+  int count = 0;
   for (int i = 0; i < param_.test_iter(test_net_id); ++i) {
     SolverAction::Enum request = GetRequestedAction();
     // Check to see if stoppage of testing/training has been requested.
@@ -460,32 +463,41 @@ void Solver<Dtype>::TestDetection(const int test_net_id) {
     if (param_.test_compute_loss()) {
       loss += iter_loss;
     }
+
     for (int j = 0; j < result.size(); ++j) {
-      CHECK_EQ(result[j]->width(), 5);
-      const Dtype* result_vec = result[j]->cpu_data();
-      int num_det = result[j]->height();
-      for (int k = 0; k < num_det; ++k) {
-        int item_id = static_cast<int>(result_vec[k * 5]);
-        int label = static_cast<int>(result_vec[k * 5 + 1]);
-        if (item_id == -1) {
-          // Special row of storing number of positives for a label.
-          if (all_num_pos[j].find(label) == all_num_pos[j].end()) {
-            all_num_pos[j][label] = static_cast<int>(result_vec[k * 5 + 2]);
-          } else {
-            all_num_pos[j][label] += static_cast<int>(result_vec[k * 5 + 2]);
-          }
+      if(result[j]->width() <5) {
+        if(j%2==0) {
+          count++;
+          top_5 += static_cast<float>(result[j]->cpu_data()[0]);
         } else {
-          // Normal row storing detection status.
-          float score = result_vec[k * 5 + 2];
-          int tp = static_cast<int>(result_vec[k * 5 + 3]);
-          int fp = static_cast<int>(result_vec[k * 5 + 4]);
-          if (tp == 0 && fp == 0) {
-            // Ignore such case. It happens when a detection bbox is matched to
-            // a difficult gt bbox and we don't evaluate on difficult gt bbox.
-            continue;
+          top_1 += static_cast<float>(result[j]->cpu_data()[0]);
+        }
+      } else {
+        const Dtype* result_vec = result[j]->cpu_data();
+        int num_det = result[j]->height();
+        for (int k = 0; k < num_det; ++k) {
+          int item_id = static_cast<int>(result_vec[k * 5]);
+          int label = static_cast<int>(result_vec[k * 5 + 1]);
+          if (item_id == -1) {
+            // Special row of storing number of positives for a label.
+            if (all_num_pos[j].find(label) == all_num_pos[j].end()) {
+              all_num_pos[j][label] = static_cast<int>(result_vec[k * 5 + 2]);
+            } else {
+              all_num_pos[j][label] += static_cast<int>(result_vec[k * 5 + 2]);
+            }
+          } else {
+            // Normal row storing detection status.
+            float score = result_vec[k * 5 + 2];
+            int tp = static_cast<int>(result_vec[k * 5 + 3]);
+            int fp = static_cast<int>(result_vec[k * 5 + 4]);
+            if (tp == 0 && fp == 0) {
+              // Ignore such case. It happens when a detection bbox is matched to
+              // a difficult gt bbox and we don't evaluate on difficult gt bbox.
+              continue;
+            }
+            all_true_pos[j][label].push_back(std::make_pair(score, tp));
+            all_false_pos[j][label].push_back(std::make_pair(score, fp));
           }
-          all_true_pos[j][label].push_back(std::make_pair(score, tp));
-          all_false_pos[j][label].push_back(std::make_pair(score, fp));
         }
       }
     }
@@ -544,8 +556,10 @@ void Solver<Dtype>::TestDetection(const int test_net_id) {
     const int output_blob_index = test_net->output_blob_indices()[i];
     const string& output_name = test_net->blob_names()[output_blob_index];
     LOG(INFO) << "    Test net output #" << i << ": " << output_name << " = "
-              << mAP;
+              << mAP;      
   }
+  LOG(INFO) << "Top 1 Accuracy: " << top_1/count;
+  LOG(INFO) << "Top 5 Accuracy: " << top_5/count;
 }
 
 template <typename Dtype>

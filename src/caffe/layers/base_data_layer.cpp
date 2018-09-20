@@ -54,6 +54,7 @@ void BasePrefetchingDataLayer<Dtype>::LayerSetUp(
     prefetch_[i].data_.mutable_cpu_data();
     if (this->output_labels_) {
       prefetch_[i].label_.mutable_cpu_data();
+      prefetch_[i].label_sup_.mutable_cpu_data();
     }
   }
 #ifndef CPU_ONLY
@@ -62,6 +63,7 @@ void BasePrefetchingDataLayer<Dtype>::LayerSetUp(
       prefetch_[i].data_.mutable_gpu_data();
       if (this->output_labels_) {
         prefetch_[i].label_.mutable_gpu_data();
+        prefetch_[i].label_sup_.mutable_gpu_data();
       }
     }
   }
@@ -119,6 +121,11 @@ void BasePrefetchingDataLayer<Dtype>::Forward_cpu(
     // Copy the labels.
     caffe_copy(batch->label_.count(), batch->label_.cpu_data(),
         top[1]->mutable_cpu_data());
+    
+    top[2]->ReshapeLike(batch->label_sup_);
+    
+    caffe_copy(batch->label_sup_.count(),batch->label_sup_.cpu_data(),
+        top[2]->mutable_cpu_data());
   }
 
   prefetch_free_.push(batch);

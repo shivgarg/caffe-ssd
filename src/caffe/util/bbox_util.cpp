@@ -1098,7 +1098,7 @@ void GetGroundTruth(const Dtype* gt_data, const int num_gt,
       map<int, LabelBBox>* all_gt_bboxes) {
   all_gt_bboxes->clear();
   for (int i = 0; i < num_gt; ++i) {
-    int start_idx = i * 8;
+    int start_idx = i * 9;
     int item_id = gt_data[start_idx];
     if (item_id == -1) {
       break;
@@ -1761,7 +1761,7 @@ void GetDetectionResults(const Dtype* det_data, const int num_det,
       map<int, map<int, vector<NormalizedBBox> > >* all_detections) {
   all_detections->clear();
   for (int i = 0; i < num_det; ++i) {
-    int start_idx = i * 7;
+    int start_idx = i * 9;
     int item_id = det_data[start_idx];
     if (item_id == -1) {
       continue;

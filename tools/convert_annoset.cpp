@@ -65,6 +65,7 @@ DEFINE_bool(encoded, false,
     "When this option is on, the encoded image will be save in datum");
 DEFINE_string(encode_type, "",
     "Optional: What type should we encode the image as ('png','jpg',...).");
+DEFINE_bool(append, false, "Append to existing db");
 
 typedef struct _LMDBData {
   bool is_color;
@@ -81,6 +82,7 @@ typedef struct _LMDBData {
   int max_dim;
   int resize_height;
   int resize_width;
+  int offset;
 
   std::string root_folder;
   std::vector<std::pair<std::string, boost::variant<int, std::string> > > lines;
@@ -145,7 +147,7 @@ void *write_to_lmdb(void* _data) {
 //      }
 //    }
     // sequential
-    string key_str = caffe::format_int(line_id, 8) + "_" + data->lines[line_id].first;
+    string key_str = caffe::format_int(line_id + data->offset, 8) + "_" + data->lines[line_id].first;
 
     // Put in db
     string out;
@@ -204,12 +206,31 @@ int main(int argc, char** argv) {
   const bool check_label = FLAGS_check_label;
   std::map<std::string, int> name_to_label;
   const int thread_num = FLAGS_thread_count;
-
+  const bool append = FLAGS_append;
   std::ifstream infile(argv[2]);
   std::vector<std::pair<std::string, boost::variant<int, std::string> > > lines;
   std::string filename;
   int label;
   std::string labelname;
+
+  scoped_ptr<db::DB> db(db::GetDB(FLAGS_backend));
+  int start_line_id = 0;
+  if (append) {
+      db->Open(argv[3], db::WRITE);
+      scoped_ptr<db::Cursor> cursor(db->NewCursor());
+      while (cursor->valid()) {
+          start_line_id++;
+          cursor->Next();
+      }
+      // start from the next line_id
+      start_line_id++;
+      LOG(INFO) << "Append from line " << start_line_id << ".";
+  } else {
+    db->Open(argv[3], db::NEW);
+  }
+
+
+
   if (anno_type == "classification") {
     while (infile >> filename >> label) {
       lines.push_back(std::make_pair(filename, label));
@@ -221,7 +242,12 @@ int main(int argc, char** argv) {
         << "Failed to read label map file.";
     CHECK(MapNameToLabel(label_map, check_label, &name_to_label))
         << "Failed to convert name to label.";
+    int cnt = start_line_id - 1;
     while (infile >> filename >> labelname) {
+      if (cnt > 0) {
+        cnt--;
+        continue;
+      }
       lines.push_back(std::make_pair(filename, labelname));
     }
   }
@@ -240,10 +266,6 @@ int main(int argc, char** argv) {
   int max_dim = std::max<int>(0, FLAGS_max_dim);
   int resize_height = std::max<int>(0, FLAGS_resize_height);
   int resize_width = std::max<int>(0, FLAGS_resize_width);
-
-  // Create new DB
-  scoped_ptr<db::DB> db(db::GetDB(FLAGS_backend));
-  db->Open(argv[3], db::NEW);
 
   // Storing to db
   std::string root_folder(argv[1]);
@@ -265,6 +287,7 @@ int main(int argc, char** argv) {
     lmdbData[i].max_dim = max_dim;
     lmdbData[i].resize_height = resize_height;
     lmdbData[i].resize_width = resize_width;
+    lmdbData[i].offset = start_line_id;
     lmdbData[i].root_folder = root_folder;
     lmdbData[i].lines = lines;
     lmdbData[i].db = db.get();

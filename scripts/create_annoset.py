@@ -47,6 +47,8 @@ if __name__ == "__main__":
       help="Randomly shuffle the order of images and their labels.")
   parser.add_argument("--check-label", default = False, action = "store_true",
       help="Check that there is no duplicated name/label.")
+  parser.add_argument("--append", default = False, action = "store_true",
+      help="Append to exisitng DB")
 
   args = parser.parse_args()
   root_dir = args.root
@@ -69,6 +71,7 @@ if __name__ == "__main__":
   resize_width = args.resize_width
   shuffle = args.shuffle
   check_label = args.check_label
+  append = args.append
 
   # check if root directory exists
   if not os.path.exists(root_dir):
@@ -113,8 +116,8 @@ if __name__ == "__main__":
   if os.path.exists(out_dir) and not redo:
     print("{} already exists and I do not hear redo".format(out_dir))
     sys.exit()
-  if os.path.exists(out_dir):
-    shutil.rmtree(out_dir)
+  #if os.path.exists(out_dir):
+  #  shutil.rmtree(out_dir)
 
   # get caffe root directory
   caffe_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -134,10 +137,11 @@ if __name__ == "__main__":
         " --encode_type={}" \
         " --encoded={}" \
         " --gray={}" \
+        " --append={}" \
         " {} {} {}" \
         .format(caffe_root, anno_type, label_type, label_map_file, check_label,
             min_dim, max_dim, resize_height, resize_width, backend, shuffle,
-            check_size, encode_type, encoded, gray, root_dir, list_file, out_dir)
+            check_size, encode_type, encoded, gray, append, root_dir, list_file, out_dir)
   elif anno_type == "classification":
     cmd = "{}/build/tools/convert_annoset" \
         " --anno_type={}" \

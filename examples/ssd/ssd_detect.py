@@ -110,24 +110,16 @@ def main(args):
     detection = CaffeDetection(args.gpu_id,
                                args.model_def, args.model_weights,
                                args.image_resize, args.labelmap_file)
-    result = detection.detect(args.image_file)
-    print result
-
-    img = Image.open(args.image_file)
-    draw = ImageDraw.Draw(img)
-    width, height = img.size
-    print width, height
-    for item in result:
-        xmin = int(round(item[0] * width))
-        ymin = int(round(item[1] * height))
-        xmax = int(round(item[2] * width))
-        ymax = int(round(item[3] * height))
-        draw.rectangle([xmin, ymin, xmax, ymax], outline=(255, 0, 0))
-        draw.text([xmin, ymin], item[-1] + str(item[-2]), (0, 0, 255))
-        print item
-        print [xmin, ymin, xmax, ymax]
-        print [xmin, ymin], item[-1]
-    img.save('detect_result.jpg')
+    
+    f = open(args.out_file,'w')
+    for _,_,files in os.walk(args.image_dir):
+      for img in files:
+        result = detection.detect(args.image_dir+'/'+img)
+        ans = img[-4]+','
+        for item in result:
+          ans += item[-1]+' '
+        ans += '\n'
+      f.write(ans)
 
 
 def parse_args():
@@ -142,7 +134,9 @@ def parse_args():
     parser.add_argument('--model_weights',
                         default='models/VGGNet/VOC0712/SSD_300x300/'
                         'VGG_VOC0712_SSD_300x300_iter_120000.caffemodel')
-    parser.add_argument('--image_file', default='examples/images/fish-bike.jpg')
+    parser.add_argument('--image_dir', default='examples/images/fish-bike.jpg')
+    parser.add_argument('--out_file', default='out')
+
     return parser.parse_args()
 
 if __name__ == '__main__':

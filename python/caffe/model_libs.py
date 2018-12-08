@@ -954,3 +954,116 @@ def CreateMultiBoxHead(net, data_layer="data", num_classes=[], num_attr=0, from_
     
 
     return mbox_layers
+
+def mobilenetv2_bn_scale_relu(net,from_layer,name,use_relu=True):
+
+    out_layer = 'conv'+name+'/bn'
+    net[out_layer] = L.BatchNorm(net[from_layer],in_place= False,batch_norm_param=dict(use_global_stats=True, eps=1e-5),param=[dict(lr_mult=0,decay_mult=0),dict(lr_mult=0,decay_mult=0),dict(lr_mult=0,decay_mult=0)])
+    from_layer = out_layer
+    out_layer = 'conv'+name + '/scale'
+    net[out_layer] = L.Scale(net[from_layer],in_place=True, scale_param=dict(bias_term=True),param=[dict(lr_mult=1,decay_mult=0),dict(lr_mult=1,decay_mult=0)])
+    from_layer = out_layer
+    if use_relu:
+        out_layer = 'relu'+name
+        net[out_layer] = L.ReLU(net[from_layer],in_place=True)
+
+    return out_layer
+
+    
+def MobileNetV2_bottleneck(net,from_layer,name,expansion,out_channels,stride,incoming_channels):
+    kwargs = {
+        'param':[dict(lr_mult=1,decay_mult=1)],
+        'weight_filler':  dict(type='msra')
+    }
+    out_layer = 'conv'+name+'/expand'
+    net[out_layer] = L.Convolution(net[from_layer],kernel_size=1,num_output=expansion*incoming_channels,bias_term=False,**kwargs)
+    from_layer = out_layer
+
+    from_layer = mobilenetv2_bn_scale_relu(net,from_layer,name+'/expand')
+
+    out_layer = 'conv'+name+'/dwise'
+    net[out_layer]=L.Convolution(net[from_layer],kernel_size=3,stride=stride,pad=1,num_output=expansion*incoming_channels,group=expansion*incoming_channels,bias_term=False,engine=1,**kwargs)
+    from_layer = out_layer
+
+    from_layer = mobilenetv2_bn_scale_relu(net,from_layer,name+'/dwise')
+
+    out_layer = 'conv'+name+'/linear'
+    net[out_layer]=L.Convolution(net[from_layer],kernel_size=1,num_output=out_channels,bias_term=False,**kwargs)
+    from_layer = out_layer
+
+    from_layer = mobilenetv2_bn_scale_relu(net,from_layer,name+'/linear',use_relu=False)
+
+    return from_layer
+    
+def MobileNetV2Body(net, from_layer):
+    kwargs = {
+        'param':[dict(lr_mult=1,decay_mult=1)],
+        'weight_filler':  dict(type='msra')
+    }
+    incoming_channels = 3
+    net.conv1 = L.Convolution(net[from_layer],num_output=32,kernel_size=3,stride=2,pad=1,bias_term=False,**kwargs)
+    from_layer = mobilenetv2_bn_scale_relu(net,'conv1','1')
+    
+    incoming_channels=32
+    from_layer = MobileNetV2_bottleneck(net,from_layer,'2_1',1,16,1,incoming_channels)
+        
+    incoming_channels=16
+    from_layer = MobileNetV2_bottleneck(net,from_layer,'2_2',6,24,2,incoming_channels)
+    incoming_channels = 24
+    from1_layer = MobileNetV2_bottleneck(net,from_layer,'3_1',6,24,1,incoming_channels)
+    net.block_3_1 = L.Eltwise(net[from_layer],net[from1_layer],operation=P.Eltwise.SUM)
+    from_layer = 'block_3_1'
+    incoming_channels=24
+
+    from_layer = MobileNetV2_bottleneck(net,from_layer,'3_2',6,32,2,incoming_channels)
+    incoming_channels = 32
+    from1_layer = MobileNetV2_bottleneck(net,from_layer,'4_1',6,32,1,incoming_channels)
+    net.block_4_1 = L.Eltwise(net[from_layer],net[from1_layer],operation=P.Eltwise.SUM)
+    from_layer = 'block_4_1'
+    incoming_channels = 32
+    from1_layer = MobileNetV2_bottleneck(net,from_layer,'4_2',6,32,1,incoming_channels)
+    net.block_4_2 = L.Eltwise(net[from_layer],net[from1_layer],operation=P.Eltwise.SUM)
+    from_layer = 'block_4_2'
+    incoming_channels = 32
+
+    from_layer = MobileNetV2_bottleneck(net,from_layer,'4_3',6,64,1,incoming_channels)
+    incoming_channels = 64
+    from1_layer = MobileNetV2_bottleneck(net,from_layer,'4_4',6,64,1,incoming_channels)
+    net.block_4_4 = L.Eltwise(net[from_layer],net[from1_layer],operation=P.Eltwise.SUM)
+    from_layer = 'block_4_4'
+    incoming_channels = 64
+    from1_layer = MobileNetV2_bottleneck(net,from_layer,'4_5',6,64,1,incoming_channels)
+    net.block_4_5 = L.Eltwise(net[from_layer],net[from1_layer],operation=P.Eltwise.SUM)
+    from_layer = 'block_4_5'
+    incoming_channels = 64
+    from1_layer = MobileNetV2_bottleneck(net,from_layer,'4_6',6,64,1,incoming_channels)
+    net.block_4_6 = L.Eltwise(net[from_layer],net[from1_layer],operation=P.Eltwise.SUM)
+    from_layer = 'block_4_6'
+    
+    from_layer = MobileNetV2_bottleneck(net,from_layer,'4_7',6,96,2,incoming_channels)
+    incoming_channels = 96
+    from1_layer = MobileNetV2_bottleneck(net,from_layer,'5_1',6,96,1,incoming_channels)
+    net.block_5_1 = L.Eltwise(net[from_layer],net[from1_layer],operation=P.Eltwise.SUM)
+    from_layer = 'block_5_1'
+    incoming_channels = 96
+    from1_layer = MobileNetV2_bottleneck(net,from_layer,'5_2',6,96,1,incoming_channels)
+    net.block_5_2 = L.Eltwise(net[from_layer],net[from1_layer],operation=P.Eltwise.SUM)
+    from_layer = 'block_5_2'
+    incoming_channels = 96
+
+    from_layer = MobileNetV2_bottleneck(net,from_layer,'5_3',6,160,2,incoming_channels)
+    incoming_channels = 160
+    from1_layer = MobileNetV2_bottleneck(net,from_layer,'6_1',6,160,1,incoming_channels)
+    net.block_6_1 = L.Eltwise(net[from_layer],net[from1_layer],operation=P.Eltwise.SUM)
+    from_layer = 'block_6_1'
+    incoming_channels = 160
+    from1_layer = MobileNetV2_bottleneck(net,from_layer,'6_2',6,160,1,incoming_channels)
+    net.block_6_2 = L.Eltwise(net[from_layer],net[from1_layer],operation=P.Eltwise.SUM)
+    from_layer = 'block_6_2'
+    incoming_channels = 160
+
+    from_layer = MobileNetV2_bottleneck(net,from_layer,'6_3',6,320,1,incoming_channels)
+
+    net.conv6_4 = L.Convolution(net[from_layer],num_output=1280,kernel_size=1,bias_term=False,**kwargs)
+    from_layer = mobilenetv2_bn_scale_relu(net,'conv6_4','6_4')
+    return from_layer

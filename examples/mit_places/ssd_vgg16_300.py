@@ -283,11 +283,11 @@ ignore_cross_boundary_bbox = False
 mining_type = P.MultiBoxLoss.MAX_NEGATIVE
 neg_pos_ratio = 3.
 loc_weight = (neg_pos_ratio + 1.) / 4.
-global_weight = 1.0
+global_weight = 0.00000000001
 
 image_label_loss = P.AnnotatedData.SOFTMAX
 num_image_labels = 365
-image_loss_weight = 40.0
+image_loss_weight = 1.0
 
 multibox_loss_param = {
     'loc_loss_type': P.MultiBoxLoss.SMOOTH_L1,
@@ -443,14 +443,6 @@ check_if_exist(pretrain_model)
 make_if_not_exist(save_dir)
 make_if_not_exist(job_dir)
 make_if_not_exist(snapshot_dir)
-
-kwargs = {
-        'param': [
-            dict(lr_mult=lr_mult, decay_mult=1),
-            dict(lr_mult=2 * lr_mult, decay_mult=0)],
-        'weight_filler': dict(type='xavier'),
-        'bias_filler': dict(type='constant', value=0)
-}
 
 # Create train net.
 net = caffe.NetSpec()
